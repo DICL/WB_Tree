@@ -671,10 +671,8 @@ class btree{
       page *p = root;
       vector<page*> path;
       path.push_back(p);
-      page *p1 = p;
       while (p) {
         if (p->hdr.flag != LEAF) {
-          p1 = p;
           p = (page*)p->linear_search(key);
           path.push_back(p);
         } else {
