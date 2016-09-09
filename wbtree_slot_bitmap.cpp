@@ -704,10 +704,11 @@ root->print();
         }
         if (child != p->hdr.leftmost_ptr) {
           if (child->hdr.cnt == 0) {
+            break;
             if (child->hdr.flag == LEAF) {
               // case A: child is empty leaf and not leftmost
-              updated_pos = p->release(key, 1);
-              delete child;
+              // updated_pos = p->release(key, 1);
+              // delete child;
             }
           } else if (updated_pos == 0) {
             // break;
