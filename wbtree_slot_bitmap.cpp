@@ -89,6 +89,7 @@ class entry{
 };
 
 const int cardinality = (PAGESIZE-sizeof(header))/ (sizeof(entry)+2);
+const uint64_t error = 1UL << 57;
 
 class page{
   private:
@@ -96,7 +97,7 @@ class page{
     entry records[cardinality]; // slots in persistent memory
 
     uint64_t bitmap; // 0 or 1 for validation, rest for entries
-    uint16_t slot_array[cardinality];  
+    uint8_t slot_array[cardinality];  
 
   public:
     page(){}
@@ -125,7 +126,7 @@ class page{
     char avail_offsets[cardinality];
 
     // can use bitmap to be faster?
-    inline uint16_t nextSlotOff()
+    inline uint8_t nextSlotOff()
     {
       for(int i=0;i<cardinality;i++){
         avail_offsets[i] = 1;
@@ -145,13 +146,13 @@ class page{
       printf("not enough space: This should not happen\n");
     }
 
-    inline uint16_t nextSlotOff2()
+    inline uint8_t nextSlotOff2()
     {
       uint64_t bit = 2;
-      uint16_t i=0;
+      uint8_t i=0;
 //      bitset<64> x(bitmap);
 //      cout << hdr.cnt <<"/"<< cardinality<< ": " << x << endl;
-      while ( bit != 0 ) {
+      while ( bit != 0 && i < cardinality) {
         if ( (bitmap & bit) == 0 ) {
           return i;
         }
@@ -159,7 +160,12 @@ class page{
         ++i;
       }
 
-      assert(false && "not enough space: This should not happen\n");
+#ifdef DEBUG
+      bitset<64> bm (bitmap);
+      cout << hdr.cnt << endl;
+      cout << bm << endl;
+#endif 
+      assert(!"not enough space: This should not happen\n");
     }
 
 
@@ -190,15 +196,15 @@ class page{
       print();
 #endif
 
+      if ( (bitmap & 1) == 0 ) {
+        // TODO: recovery
+        bitmap += 1; 
+        if(flush)
+          clflush((char*) &bitmap, 1);
+      }
       if( hdr.cnt < cardinality ){
         // have space
-        if ( (bitmap & 1) == 0 ) {
-          // TODO: recovery
-          bitmap += 1; 
-          if(flush)
-            clflush((char*) &bitmap, 1);
-        }
-        register uint16_t slot_off = (uint16_t) nextSlotOff2();
+        register uint8_t slot_off = (uint8_t) nextSlotOff2();
         bitmap -= 1;
         if(flush) 
           clflush((char*) &bitmap, 1);
@@ -216,16 +222,17 @@ class page{
 
           slot_array[0] = slot_off;
           if(flush)
-            clflush((char*) slot_array, sizeof(uint16_t));
+            clflush((char*) slot_array, sizeof(uint8_t));
 
-          uint64_t bit = (1 << (slot_off+1));
+          uint64_t bit = (1UL << (slot_off+1));
           bitmap |= bit;
-
           bitmap+=1;
+
           if(flush)
-            clflush((char*) &bitmap, 1);
+            clflush((char*) &bitmap, 8);
 
           hdr.cnt++; 
+          assert(bitmap < error);
         }
         else{
           int pos=0;
@@ -253,17 +260,19 @@ class page{
           slot_array[pos] = slot_off;
 
           if(flush)
-            clflush((char*) slot_array, sizeof(uint16_t)*hdr.cnt);
+            clflush((char*) slot_array, sizeof(uint8_t)*hdr.cnt);
 
-          uint64_t bit = ((unsigned long)1 << (slot_off+1));
+          uint64_t bit = (1UL << (slot_off+1));
+          uint64_t backup_bitmap = bitmap;
           bitmap |= bit;
-          //bitset<64> x(bit);
-          //cout << slot_off << ": " << x << endl;
-
           bitmap+=1;
+//          bitset<64> bm(bitmap);
+//          cout << hdr.cnt+1 << ":\t" << bm << endl;
+
           if(flush)
-            clflush((char*) &bitmap, 1);
+            clflush((char*) &bitmap, 8);
           hdr.cnt++;
+          assert (bitmap < error);
         }
 
 #ifdef DEBUG
@@ -285,6 +294,12 @@ class page{
 //        cout << hdr.cnt << ":\t" << map << endl;
         page* rsibling = new page(hdr.flag); 
         register int m = (int) ceil(hdr.cnt/2);
+        uint64_t bitmap_change = 0;
+        int n = 0;
+
+        bitmap -= 1;
+        if(flush) 
+          clflush((char*) &bitmap, 8);
 
         // TODO: redo logging?
         // Maybe I can... 
@@ -294,20 +309,26 @@ class page{
           //migrate i > hdr.cnt/2 to a rsibling;
           for(int i=m;i<hdr.cnt;i++){
             rsibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
-            uint64_t bit = 1 << (i+1);
-            bitmap -= bit;
+            uint64_t bit = (1UL << (slot_array[i]+1));
+            bitmap_change += bit;
+            n++;
           }
         }
         else{
           //migrate i > hdr.cnt/2 to a rsibling;
           rsibling->hdr.leftmost_ptr = (page*) records[slot_array[m]].ptr;
-          for(int i=m+1;i<hdr.cnt;i++){
+          for(int i=m;i<hdr.cnt;i++){
             rsibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
-            uint64_t bit = 1 << (i+1);
-            bitmap -= bit;
+            uint64_t bit = (1UL << (slot_array[i]+1));
+            bitmap_change += bit;
+            n++;
           }
         }
+        assert ((bitmap & bitmap_change) == bitmap_change);
+        bitmap -= bitmap_change;
+        bitmap += 1;
         hdr.cnt = m;
+
         if(flush){
           clflush((char*) this, sizeof(page));
           clflush((char*) rsibling, sizeof(page));
