@@ -165,6 +165,7 @@ class page{
       cout << hdr.cnt << endl;
       cout << bm << endl;
 #endif 
+      cout << "no space: " << bitmap << endl;
       assert(!"not enough space: This should not happen\n");
     }
 
@@ -354,35 +355,68 @@ class page{
     }
 
     int update_key(int64_t key, int64_t new_key, int flush) {
-      int pos;
       // TODO: Make it to reuse the postition value gathered from path search.
+      int pos = hdr.cnt;
       for (pos = 0; pos < hdr.cnt; ++pos) {
         if (records[slot_array[pos]].key == key) {
           break;
         }
       }
-      records[slot_array[pos]].key = new_key;
+      if (pos == hdr.cnt) {
+        cout << "update: Not found ***, " << ((hdr.flag == LEAF)?"LEAF":"INTERNAL") << endl;
+#ifdef DEBUG
+        print();
+        exit(1);
+#endif
+      }
+      if (bitmap & 1UL != 1UL) {
+        // TODO: recovery
+        bitmap |= 1UL;
+        if (flush) {
+          clflush((char*)&bitmap, sizeof(int64_t));
+        }
+      }
+      // invalidate the page.
+      bitmap &= 0xFFFFFFFFFFFFFFFE;
+      if (flush) {
+        clflush((char*)&bitmap, sizeof(int64_t));
+      }
+      // update the key.
+      entry *tmp_entry = &records[slot_array[pos]];
+      tmp_entry->key = new_key;
+      if (flush) {
+        clflush((char*)tmp_entry, sizeof(entry));
+      }
+      // validate the page
+      bitmap |= 1UL;
+      if (flush) {
+        clflush((char*)&bitmap, sizeof(int64_t));
+      }
       return pos;
     }
 
     int release(int64_t key, int flush) {
-      int pos = -1;
+      int pos = hdr.cnt;
       for (pos = 0; pos < hdr.cnt; ++pos) {
         if (records[slot_array[pos]].key == key) {
           break;
         }
       }
-      if (pos == -1) {
-        printf("Not found************************************\n");
+      if (pos == hdr.cnt) {
+        cout << "release: Not found ***, " << ((hdr.flag == LEAF)?"LEAF":"INTERNAL") << endl;
 #ifdef DEBUG
         print();
         exit(1);
 #endif
       }
       // calculate the entry bit.
-      uint64_t bit = (0x1 << (pos + 1));
-      if (bitmap & 0x1 != 0x1) {
-        
+      int64_t bit = (1UL << (slot_array[pos] + 1));
+      if (bitmap & 1UL != 1UL) {
+        // TODO: recovery
+        bitmap |= 1UL;
+        if (flush) {
+          clflush((char*)&bitmap, sizeof(int64_t));
+        }
       }
       // invalidate the page.
       bitmap &= 0xFFFFFFFFFFFFFFFE;
@@ -390,9 +424,6 @@ class page{
         clflush((char*)&bitmap, sizeof(int64_t));
       }
       // update slot array
-      if (hdr.flag != LEAF && pos == 0) {
-        hdr.leftmost_ptr = (page*)records[slot_array[0]].ptr;
-      }
       for (int i = pos; i < hdr.cnt - 1; ++i) {
         slot_array[i] = slot_array[i + 1];
       }
@@ -404,7 +435,7 @@ class page{
       // update the bitmap.
       bitmap ^= bit;
       // validate the page
-      bitmap |= 0x1;
+      bitmap |= 1UL;
       if (flush) {
         clflush((char*)&bitmap, sizeof(int64_t));
       }
@@ -640,8 +671,10 @@ class btree{
       page *p = root;
       vector<page*> path;
       path.push_back(p);
+      page *p1 = p;
       while (p) {
         if (p->hdr.flag != LEAF) {
+          p1 = p;
           p = (page*)p->linear_search(key);
           path.push_back(p);
         } else {
@@ -653,32 +686,57 @@ class btree{
       }
       int updated_pos = p->release(key, 1);
       // TODO: logging needed?
-      while (path.size() > 1) {
+      while (p != root) {
         page *child = p;
         p = (page*)path.back();
         path.pop_back();
-        if (child->hdr.cnt == 0) {
-          // child is empty
-          if (p->hdr.leftmost_ptr == child) {
-            // case A: child is leftmost
-            int64_t first_key = p->getKey(0);
-            updated_pos = p->release(first_key, 1);
-            key = first_key;
+        if (p->hdr.flag == LEAF) {
+          // Why this happen??
+          break;
+        }
+        if (child != p->hdr.leftmost_ptr) {
+          if (child->hdr.cnt == 0) {
+            if (child->hdr.flag == LEAF) {
+              // case A: child is empty leaf and not leftmost
+              updated_pos = p->release(key, 1);
+              delete child;
+            }
+          } else if (updated_pos == 0) {
+            // break;
+            // case B: child is alive, nonleftmost, first key changed.
+            int64_t new_key = child->getKey(0);
+            updated_pos = p->update_key(key, new_key, 1);
           } else {
-            // case B: child is not leftmost
-            updated_pos = p->release(key, 1);
+            // case C: child is alive, nonleftmost, nonfisrt key changed.
+            // nothing to do.
+            break;
           }
-          delete child;
-        } else if (updated_pos == 0) {
-          // case C: first key deleted
-          int64_t new_key = child->getKey(0);
-          updated_pos = p->update_key(key, new_key, 1);
         } else {
-          //    nothing to do.
+          // case D: child is leftmost.
+          // nothing to do.
           break;
         }
       }
     }
+
+    bool btree_check(page *p) {
+      if (p->hdr.flag == LEAF) {
+        return true;
+      }
+      for (int i = 0; i < p->hdr.cnt; ++i) {
+        if (((page*)p->getPtr(i))->getKey(0) != p->getKey(i)) {
+          cout << "parent " << i << "th " << "key= " << p->getKey(i) << endl;
+          cout << "child first key= " << ((page*)p->getPtr(i))->getKey(0) << endl;
+          return false;
+        }
+        return btree_check((page*)p->getPtr(i));
+      }
+    }
+
+    bool btree_ck() {
+      return btree_check(root);
+    }
+
     void printAll(){
       root->printAll();
     }
@@ -766,6 +824,9 @@ int main(int argc,char** argv)
   cout<<"LINEAR SEARCH"<<endl;
   cout<<"elapsedTime : "<<elapsedTime/1000 << "usec" <<endl;
 
+  if (!bt.btree_ck()) return 0;
+
+
   clflush_cnt = 0;
   clock_gettime(CLOCK_MONOTONIC,&start);
   for(int i=0;i<numData;i++){
@@ -777,6 +838,15 @@ int main(int argc,char** argv)
   cout<<"DELETETION"<<endl;
   cout<<"elapsedTime : "<<elapsedTime/1000 << "usec" <<endl;
   cout<<"clflush_cnt : "<<clflush_cnt<<endl;
+
+
+
+  // for(int i=0;i<numData;i++){
+  //   bt.btree_insert(keys[i], (char*) keys[i]);
+  // }
+  // bt.printAll();
+  // for(int i=0;i<numData;i++){
+  //   bt.btree_delete(keys[i]);
+  // }
+  // bt.printAll();
 }
-
-
