@@ -373,12 +373,40 @@ rsibling->print();
         }
       }
       if (pos == hdr.cnt) {
-        cout << "update: Not found ***, " << ((hdr.flag == LEAF)?"LEAF":"INTERNAL") << endl;
+        cout << "update: Not found ***, " <<
+                ((hdr.flag == LEAF)?"LEAF":"INTERNAL") << endl;
 #ifdef DEBUG
         print();
         exit(1);
 #endif
       }
+      if (bitmap & 1UL != 1UL) {
+        // TODO: recovery
+        bitmap |= 1UL;
+        if (flush) {
+          clflush((char*)&bitmap, sizeof(int64_t));
+        }
+      }
+      // invalidate the page.
+      bitmap &= 0xFFFFFFFFFFFFFFFE;
+      if (flush) {
+        clflush((char*)&bitmap, sizeof(int64_t));
+      }
+      // update the key.
+      entry *tmp_entry = &records[slot_array[pos]];
+      tmp_entry->key = new_key;
+      if (flush) {
+        clflush((char*)tmp_entry, sizeof(entry));
+      }
+      // validate the page
+      bitmap |= 1UL;
+      if (flush) {
+        clflush((char*)&bitmap, sizeof(int64_t));
+      }
+      return pos;
+    }
+
+    int update_pos_key(int pos, int64_t new_key, int flush) {
       if (bitmap & 1UL != 1UL) {
         // TODO: recovery
         bitmap |= 1UL;
@@ -519,6 +547,38 @@ rsibling->print();
           }
         }
         // visit rightmost pointer 
+        return getPtr(hdr.cnt-1); // return rightmost ptr
+      }
+    }
+
+    char* linear_search(int64_t key, int &pos) {
+      pos = -1;
+      if (hdr.flag==LEAF) {
+        for(int i = 0; i < hdr.cnt; ++i) {
+          if (records[slot_array[i]].key == key) {
+            //printf("found: %lld\n", key);
+            pos = i;
+            return records[slot_array[i]].ptr;
+          }
+        }
+        printf("Not found************************************\n");
+#ifdef DEBUG
+        print();
+        exit(1);
+#endif
+      } else {
+        if (key < getKey(0)){
+          return (char*) hdr.leftmost_ptr;
+        }
+        for(int i = 1; i < hdr.cnt; ++i) {
+          if (key < records[slot_array[i]].key) {
+            // visit child i
+            pos = i - 1;
+            return records[slot_array[i-1]].ptr;
+          }
+        }
+        // visit rightmost pointer 
+        pos = hdr.cnt - 1;
         return getPtr(hdr.cnt-1); // return rightmost ptr
       }
     }
@@ -679,12 +739,19 @@ root->print();
 
     void btree_delete(int64_t key) {
       page *p = root;
-      vector<page*> path;
-      path.push_back(p);
+
+      page* path[height];
+      int path_pos[height];
+      int top = 0;
+      path[top++] = p;
+
+      // vector<page*> path;
+      // path.push_back(p);
       while (p) {
         if (p->hdr.flag != LEAF) {
-          p = (page*)p->linear_search(key);
-          path.push_back(p);
+          p = (page*)p->linear_search(key, path_pos[top]);
+          path[top++] = p;
+          // path.push_back(p);
         } else {
           break;
         }
@@ -696,8 +763,9 @@ root->print();
       // TODO: logging needed?
       while (p != root) {
         page *child = p;
-        p = (page*)path.back();
-        path.pop_back();
+        p = path[--top];
+        // p = (page*)path.back();
+        // path.pop_back();
         if (p->hdr.flag == LEAF) {
           // Why this happen??
           break;
@@ -714,7 +782,8 @@ root->print();
             // break;
             // case B: child is alive, nonleftmost, first key changed.
             int64_t new_key = child->getKey(0);
-            updated_pos = p->update_key(key, new_key, 1);
+            // updated_pos = p->update_key(key, new_key, 1);
+            updated_pos = p->update_pos_key(path_pos[top], new_key, 1);
           } else {
             // case C: child is alive, nonleftmost, nonfisrt key changed.
             // nothing to do.
