@@ -387,14 +387,12 @@ class page{
         else{
           //migrate i > hdr.cnt/2 to a rsibling;
           rsibling->hdr.leftmost_ptr = (page*) records[slot_array[m]].ptr;
-          for(int i=m+1;i<hdr.cnt;i++){
+          for(int i=m;i<hdr.cnt;i++){
             rsibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
             uint64_t bit = (1UL << (slot_array[i]+1));
             bitmap_change += bit;
             //            n++;
           }
-          uint64_t bit = (1UL << (slot_array[m]+1));
-          bitmap_change += bit;
         }
         assert ((bitmap & bitmap_change) == bitmap_change);
 
@@ -669,6 +667,24 @@ class btree{
       }
     }
 
+      bool btree_check(page *p) {
+        if (p->hdr.flag == LEAF) {
+          return true;
+        }
+        for (int i = 0; i < p->hdr.cnt; ++i) {
+          if (((page*)p->getPtr(i))->getKey(0) != p->getKey(i)) {
+            cout << "parent " << i << "th " << "key= " << p->getKey(i) << endl;
+            cout << "child first key= " << ((page*)p->getPtr(i))->getKey(0) << endl;
+            return false;
+          }
+          return btree_check((page*)p->getPtr(i));
+        }
+      }
+
+      bool btree_ck() {
+        return btree_check(root);
+      }
+
     void printAll(){
       root->printAll();
     }
@@ -721,6 +737,8 @@ int main(int argc,char** argv)
 #endif
   }
   clock_gettime(CLOCK_MONOTONIC,&end);
+
+  bt.btree_ck();
 
   long long elapsedTime = (end.tv_sec-start.tv_sec)*1000000000 + (end.tv_nsec-start.tv_nsec);
   cout<<"INSERTION"<<endl;
