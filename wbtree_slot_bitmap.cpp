@@ -54,6 +54,67 @@ inline void clflush(char *data, int len)
 
 }
 
+class btree_log {
+  private:
+    uint32_t capacity;
+    uint32_t size;
+    uint32_t prev_size;
+    int8_t* log_pg;
+    bool commited;
+    vector<uint32_t> tx_cnt;
+
+  public:
+    btree_log(uint32_t cap) {
+      capacity = cap;
+      size = 0;
+      prev_size = 0;
+      log_pg = (int8_t*)malloc(capacity);
+      commited = true;
+    }
+    
+    btree_log () {
+      capacity = 0;
+      size = 0;
+      prev_size = 0;
+      log_pg = NULL;
+      commited = true;
+    }
+
+    ~btree_log() {
+      delete log_pg;
+    }
+
+    void init(uint32_t cap) {
+      capacity = cap;
+      log_pg = (int8_t*)malloc(capacity);
+    }
+
+    void write(int8_t* ptr, uint32_t s) {
+     assert ( size + s < capacity );
+     memcpy(log_pg + size, ptr, s);
+     size += s;
+     commited = false;
+    }
+
+    void commit() {
+      if (size > capacity * 0.7) {
+        capacity = 1.5 * capacity;
+        int8_t* new_pg = (int8_t*)malloc(capacity);
+        memcpy(new_pg, log_pg, size);
+        delete log_pg;
+        log_pg = new_pg;
+      }
+      clflush((char*) log_pg + prev_size, size-prev_size);
+      tx_cnt.push_back(size);
+      prev_size = tx_cnt.back();
+      commited = true;
+    }
+
+    bool isCommited() {
+      return commited;
+    }
+};
+
 class page;
 
 class split_info{
@@ -479,11 +540,13 @@ class btree{
   private:
     int height;
     page* root;
+    btree_log log;
 
   public:
     btree(){
       root = new page(LEAF);
       height = 1;
+      log.init(sizeof(page)*1024);
     }
 
     // binary search
@@ -557,16 +620,18 @@ class btree{
         if(s!=NULL){
           // split occurred
           // logging needed
-          page *logPage = new page[2];
-          memcpy(logPage, s->left, sizeof(page));
-          memcpy(logPage+1, s->right, sizeof(page));
-          clflush((char*) logPage, 2*sizeof(page));
+//          page *logPage = new page[2];
+//          memcpy(logPage, s->left, sizeof(page));
+//          memcpy(logPage+1, s->right, sizeof(page));
+//          clflush((char*) logPage, 2*sizeof(page));
+          log.write((int8_t*)s->left, sizeof(page));
+          log.write((int8_t*)s->right, sizeof(page));
           // we need log frame header, but let's just skip it for now... need to fix it for later..
 
           page* overflown = p;
           //p = (page*) path.back();
-          p = (page*) path[--top];
           //path.pop_back();
+          p = (page*) path[--top];
           //if(path.empty()){
           if ( top == 0 ) {
             // tree height grows here
@@ -584,7 +649,7 @@ class btree{
           else{
             // this part needs logging 
             //p = (page*) path.back();
-            p = (page*) path[--top];
+            p = (page*) path[top-1];
             left = (char*) s->left;
             key = s->split_key; 
             right = (char*) s->right;
@@ -596,12 +661,14 @@ class btree{
           delete s;
         }
       } while(p!=NULL);
+      if (!log.isCommited()) {
+        log.commit();
+      }
     }
 
     void printAll(){
       root->printAll();
     }
-
 };
 
 int main(int argc,char** argv)
