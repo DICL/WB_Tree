@@ -45,10 +45,10 @@ inline void clflush(char *data, int len)
 
   mfence();
   for(; ptr<data+len; ptr+=CACHE_LINE_SIZE){
-//printf("clflush ptr: %x\n", ptr);
+    //printf("clflush ptr: %x\n", ptr);
     asm volatile("clflush %0" : "+m" (*(volatile char *)ptr));
     clflush_cnt++;
-//printf("clflush cnt: %d\n", clflush_cnt);
+    //printf("clflush cnt: %d\n", clflush_cnt);
   }
   mfence();
 
@@ -156,8 +156,8 @@ class page{
     {
       uint64_t bit = 2;
       uint8_t i=0;
-//      bitset<64> x(bitmap);
-//      cout << hdr.cnt <<"/"<< cardinality<< ": " << x << endl;
+      //      bitset<64> x(bitmap);
+      //      cout << hdr.cnt <<"/"<< cardinality<< ": " << x << endl;
       while ( bit != 0 && i < cardinality) {
         if ( (bitmap & bit) == 0 ) {
           return i;
@@ -198,8 +198,8 @@ class page{
     split_info* store(char* left, int64_t key, char* right, int flush ) 
     {
 #ifdef DEBUG
-printf("\n-----------------------\nBEFORE STORE %d\n", key);
-print();
+      printf("\n-----------------------\nBEFORE STORE %d\n", key);
+      print();
 #endif
 
       if ( (bitmap & 1) == 0 ) {
@@ -274,8 +274,8 @@ print();
 #endif
           bitmap |= bit;
           bitmap+=1;
-//          bitset<64> bm(bitmap);
-//          cout << hdr.cnt+1 << ":\t" << bm << endl;
+          //          bitset<64> bm(bitmap);
+          //          cout << hdr.cnt+1 << ":\t" << bm << endl;
 
           if(flush)
             clflush((char*) &bitmap, 8);
@@ -284,22 +284,22 @@ print();
         }
 
 #ifdef DEBUG
-printf("--------------:\n");
-printf("AFTER STORE:\n");
-print();
-printf("---------------------------------\n");
+        printf("--------------:\n");
+        printf("AFTER STORE:\n");
+        print();
+        printf("---------------------------------\n");
 #endif
       }
       else {
         // overflow
         // TBD: defragmentation not yet implemented.
 #ifdef DEBUG
-printf("====OVERFLOW OVERFLOW OVERFLOW====\n");
-print();
+        printf("====OVERFLOW OVERFLOW OVERFLOW====\n");
+        print();
 #endif
         //page* lsibling = new page(hdr.flag); 
-//        bitset<64> map(bitmap);
-//        cout << hdr.cnt << ":\t" << map << endl;
+        //        bitset<64> map(bitmap);
+        //        cout << hdr.cnt << ":\t" << map << endl;
         page* rsibling = new page(hdr.flag); 
         register int m = (int) ceil(hdr.cnt/2);
         uint64_t bitmap_change = 0;
@@ -320,7 +320,7 @@ print();
             rsibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
             uint64_t bit = (1UL << (slot_array[i]+1));
             bitmap_change += bit;
-//            n++;
+            //            n++;
           }
         }
         else{
@@ -330,10 +330,11 @@ print();
             rsibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
             uint64_t bit = (1UL << (slot_array[i]+1));
             bitmap_change += bit;
-//            n++;
+            //            n++;
           }
         }
         assert ((bitmap & bitmap_change) == bitmap_change);
+
         bitmap -= bitmap_change;
         bitmap += 1;
         this->hdr.cnt = m;
@@ -351,12 +352,12 @@ print();
           rsibling->store(left, key, right, 1);
         }
 #ifdef DEBUG
-printf("Split done\n");
-printf("Split key=%lld\n", s->split_key);
-printf("LEFT\n");
-lsibling->print();
-printf("RIGHT\n");
-rsibling->print();
+        printf("Split done\n");
+        printf("Split key=%lld\n", s->split_key);
+        printf("LEFT\n");
+        lsibling->print();
+        printf("RIGHT\n");
+        rsibling->print();
 #endif
         return s;
       }
@@ -441,11 +442,11 @@ rsibling->print();
       else printf("internal\n");
       printf("hdr.cnt=%d:\n", hdr.cnt);
 
-//        printf("slot_array:\n");
-//	  for(int i=0;i<hdr.cnt;i++){
-//              printf("%d ", (uint8_t) slot_array[i]);
-//	  }
-//	  printf("\n");
+      //        printf("slot_array:\n");
+      //	  for(int i=0;i<hdr.cnt;i++){
+      //              printf("%d ", (uint8_t) slot_array[i]);
+      //	  }
+      //	  printf("\n");
 
       for(int i=0;i<hdr.cnt;i++){
         printf("%ld ", getEntry(i)->key);
@@ -526,13 +527,18 @@ class btree{
 
     void btree_insert(long long key, char* right){
       page* p = root;
-      vector<page*> path;
-      path.push_back(p);
+      //vector<page*> path;
+      //vector<page*> path(height+1);
+      page* path[height+1];
+      //path.push_back(p);
+      int top = 0;
+      path[top++] = p;
       while(p){
         if(p->hdr.flag!=LEAF){
           p = (page*) p->linear_search(key);
           //p = (page*) p->binary_search(key);
-          path.push_back(p);
+          //path.push_back(p);
+          path[top++] = p;
         }
         else{
           // found a leaf p
@@ -546,9 +552,9 @@ class btree{
       char *left = NULL;
       do{
         assert(right!=NULL);
-          split_info *s = p->store(left, key, right, 1); // store
-          p = NULL;
-          if(s!=NULL){
+        split_info *s = p->store(left, key, right, 1); // store
+        p = NULL;
+        if(s!=NULL){
           // split occurred
           // logging needed
           page *logPage = new page[2];
@@ -558,15 +564,17 @@ class btree{
           // we need log frame header, but let's just skip it for now... need to fix it for later..
 
           page* overflown = p;
-          p = (page*) path.back();
-          path.pop_back();
-          if(path.empty()){
+          //p = (page*) path.back();
+          p = (page*) path[--top];
+          //path.pop_back();
+          //if(path.empty()){
+          if ( top == 0 ) {
             // tree height grows here
             page* new_root = new page(s->left, s->split_key, s->right);
             root = new_root;
 #ifdef DEBUG
-printf("tree grows: root = %x\n", root);
-root->print();
+            printf("tree grows: root = %x\n", root);
+            root->print();
 #endif 
             //delete overflown;
 
@@ -575,7 +583,8 @@ root->print();
           }
           else{
             // this part needs logging 
-            p = (page*) path.back();
+            //p = (page*) path.back();
+            p = (page*) path[--top];
             left = (char*) s->left;
             key = s->split_key; 
             right = (char*) s->right;
@@ -601,7 +610,7 @@ int main(int argc,char** argv)
   btree bt;
   struct timespec start, end;
 
-//    printf("sizeof(page)=%lu\n", sizeof(page));
+  //    printf("sizeof(page)=%lu\n", sizeof(page));
 
   if(argc<2) {
     printf("Usage: %s NDATA\n", argv[0]);
@@ -634,7 +643,7 @@ int main(int argc,char** argv)
   clock_gettime(CLOCK_MONOTONIC,&start);
   for(int i=0;i<numData;i++){
 #ifdef DEBUG
-printf("inserting %lld\n", keys[i]);
+    printf("inserting %lld\n", keys[i]);
 #endif
     bt.btree_insert(keys[i], (char*) keys[i]);
 #ifdef DEBUG
