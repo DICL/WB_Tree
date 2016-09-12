@@ -1,4 +1,3 @@
-// TODO : delete all try & catch
 #include <unistd.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -10,16 +9,16 @@
 #include <vector>
 #include <string.h>
 #include <cassert>
+
 //#define DEBUG 1
 
 #ifdef DEBUG
-#define PAGESIZE 128
-#include <bitset>
+//  #define PAGESIZE 128
 #else
 //  #define PAGESIZE 8192
 //  #define PAGESIZE 4096
 //  #define PAGESIZE 2048
-#define PAGESIZE 1024
+//  #define PAGESIZE 1024
 //  #define PAGESIZE 512
 //  #define PAGESIZE 256
 #endif
@@ -130,14 +129,14 @@ class split_info{
     friend class page;
 };
 
-class header{ // 27 bytes
+class header{
   private:
-    uint8_t cnt; // 1 bytes
-    uint8_t flag; // 1 byte, leaf or internal
-    uint8_t fragmented_bytes; // 1 byte
-    page* leftmost_ptr; // 8 bytes
-    int64_t split_key; // 8 bytes
-    page* sibling_ptr; // 8 bytes
+    uint8_t cnt;
+    uint8_t flag;
+    uint8_t fragmented_bytes;
+    page* leftmost_ptr;  
+    int64_t split_key;
+    page* sibling_ptr;
     friend class page;
     friend class btree;
 };
@@ -145,21 +144,19 @@ class header{ // 27 bytes
 class entry{
   private:
     //int16_t len;  // need this for variable-length record and defragmentation.
-    int64_t key; // 8 bytes
-    char* ptr;   // 8 bytes
+    int64_t key;
+    char* ptr;
 
     friend class page;
 };
 
-const int cardinality = (PAGESIZE-sizeof(header))/ (sizeof(entry)+2);
-const uint64_t error = 1UL << 57;
+const int cardinality = 8; //slot only 
 
 class page{
   private:
     header hdr;  // header in persistent memory
     entry records[cardinality]; // slots in persistent memory
 
-    uint64_t bitmap; // 0 or 1 for validation, rest for entries
     uint8_t slot_array[cardinality];  
 
   public:
@@ -167,7 +164,6 @@ class page{
 
     page(short f)
     {
-      bitmap=1;
       hdr.cnt=0;
       hdr.flag=f;
       hdr.fragmented_bytes=0;
@@ -180,7 +176,6 @@ class page{
 
     page(page* left, int64_t key, page* right) // this is called when tree grows
     {
-      bitmap=1;
       hdr.cnt=0;
       hdr.flag=INTERNAL;
       hdr.fragmented_bytes=0;
@@ -213,28 +208,6 @@ class page{
       printf("not enough space: This should not happen\n");
     }
 
-    inline uint8_t nextSlotOff2()
-    {
-      uint64_t bit = 2;
-      uint8_t i=0;
-      //      bitset<64> x(bitmap);
-      //      cout << hdr.cnt <<"/"<< cardinality<< ": " << x << endl;
-      while ( bit != 0 && i < cardinality) {
-        if ( (bitmap & bit) == 0 ) {
-          return i;
-        }
-        bit = bit << 1;
-        ++i;
-      }
-
-#ifdef DEBUG
-      bitset<64> bm (bitmap);
-      cout << hdr.cnt << endl;
-      cout << bm << endl;
-#endif 
-      assert(!"not enough space: This should not happen\n");
-    }
-
 
     inline int64_t getKey(int i)
     {
@@ -263,18 +236,9 @@ class page{
       print();
 #endif
 
-      if ( (bitmap & 1) == 0 ) {
-        // TODO: recovery
-        bitmap += 1; 
-        if(flush)
-          clflush((char*) &bitmap, 1);
-      }
       if( hdr.cnt < cardinality ){
         // have space
-        register uint8_t slot_off = (uint8_t) nextSlotOff2();
-        bitmap -= 1;
-        if(flush) 
-          clflush((char*) &bitmap, 1);
+        register uint8_t slot_off = (uint8_t) nextSlotOff();
 
         if(hdr.cnt==0){  // this page is empty
           entry* new_entry = (entry*) &records[slot_off];
@@ -291,15 +255,7 @@ class page{
           if(flush)
             clflush((char*) slot_array, sizeof(uint8_t));
 
-          uint64_t bit = (1UL << (slot_off+1));
-          bitmap |= bit;
-          bitmap+=1;
-
-          if(flush)
-            clflush((char*) &bitmap, 8);
-
           hdr.cnt++; 
-          assert(bitmap < error);
         }
         else{
           int pos=0;
@@ -308,6 +264,7 @@ class page{
               break;
             }
           }
+          //printf("pos=%d\n", pos);
 
           if(left!=NULL){
             // this is needed for CoW
@@ -329,19 +286,7 @@ class page{
           if(flush)
             clflush((char*) slot_array, sizeof(uint8_t)*hdr.cnt);
 
-          uint64_t bit = (1UL << (slot_off+1));
-#ifdef DEBUG
-          uint64_t backup_bitmap = bitmap;
-#endif
-          bitmap |= bit;
-          bitmap+=1;
-          //          bitset<64> bm(bitmap);
-          //          cout << hdr.cnt+1 << ":\t" << bm << endl;
-
-          if(flush)
-            clflush((char*) &bitmap, 8);
-          hdr.cnt++;
-          assert (bitmap < error);
+          hdr.cnt++; 
         }
 
 #ifdef DEBUG
@@ -358,71 +303,50 @@ class page{
         printf("====OVERFLOW OVERFLOW OVERFLOW====\n");
         print();
 #endif
-        //page* lsibling = new page(hdr.flag); 
-        //        bitset<64> map(bitmap);
-        //        cout << hdr.cnt << ":\t" << map << endl;
-        page* rsibling = new page(hdr.flag); 
+
+        page* sibling = new page(hdr.flag); 
         register int m = (int) ceil(hdr.cnt/2);
-        uint64_t bitmap_change = 0;
-        //int n = 0;
-
-        bitmap -= 1;
-        if(flush) 
-          clflush((char*) &bitmap, 8);
-
-        // TODO: redo logging?
-        // Maybe I can... 
-        //split_info s((page*)this, (uint64_t) records[slot_array[m]].key, (page*) rsibling);
-        split_info *s = new split_info((page*)this, (uint64_t) records[slot_array[m]].key, (page*) rsibling);
 
         if(hdr.flag==LEAF){
-          //migrate i > hdr.cnt/2 to a rsibling;
+          //migrate i > hdr.cnt/2 to a sibling;
           for(int i=m;i<hdr.cnt;i++){
-            rsibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
-            uint64_t bit = (1UL << (slot_array[i]+1));
-            bitmap_change += bit;
-            //            n++;
+            sibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
           }
+
+          hdr.split_key = records[slot_array[m]].key;
+          hdr.sibling_ptr = sibling;
+          hdr.cnt = hdr.cnt - sibling->hdr.cnt;
+          clflush((char*) &hdr, sizeof(hdr));
         }
         else{
-          //migrate i > hdr.cnt/2 to a rsibling;
-          rsibling->hdr.leftmost_ptr = (page*) records[slot_array[m]].ptr;
+          //migrate i > hdr.cnt/2 to a sibling;
           for(int i=m+1;i<hdr.cnt;i++){
-            rsibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
-            uint64_t bit = (1UL << (slot_array[i]+1));
-            bitmap_change += bit;
-            //            n++;
+            sibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
           }
-          uint64_t bit = (1UL << (slot_array[m]+1));
-          bitmap_change += bit;
-        }
-        assert ((bitmap & bitmap_change) == bitmap_change);
-
-        bitmap -= bitmap_change;
-        bitmap += 1;
-        this->hdr.cnt = m;
-        this->hdr.sibling_ptr = rsibling;
-
-        if(flush){
-          clflush((char*) this, sizeof(page));
-          clflush((char*) rsibling, sizeof(page));
+          sibling->hdr.leftmost_ptr = (page*) records[slot_array[m]].ptr;
+          hdr.split_key = records[slot_array[m]].key;
+          hdr.sibling_ptr = sibling;
+          hdr.cnt = hdr.cnt - sibling->hdr.cnt-1;
+          if(flush)
+            clflush((char*) &hdr, sizeof(hdr));
         }
         // split is done.. now let's insert a new entry
 
-        if(key < s->split_key){
-          store(left, key, right, 1);
+        if(key < hdr.split_key){
+          store(key, right, 0);
         }
         else {
-          rsibling->store(left, key, right, 1);
+          sibling->store(key, right, 0);
         }
 #ifdef DEBUG
         printf("Split done\n");
-        printf("Split key=%lld\n", s->split_key);
+        printf("Split key=%lld\n", hdr.split_key);
         printf("LEFT\n");
-        lsibling->print();
+        print();
         printf("RIGHT\n");
-        rsibling->print();
+        sibling->print();
 #endif
+        split_info *s = new split_info((page*)this, (uint64_t) hdr.split_key, (page*) sibling);
         return s;
       }
       return NULL;
@@ -480,10 +404,7 @@ class page{
           }
         }
         printf("Not found************************************\n");
-#ifdef DEBUG
-        print();
-        exit(1);
-#endif
+        //print();
       }
       else {
         if(key < getKey(0)){
@@ -495,8 +416,13 @@ class page{
             return records[slot_array[i-1]].ptr;
           }
         }
-        // visit rightmost pointer 
-        return getPtr(hdr.cnt-1); // return rightmost ptr
+        // visit rightmost pointer or sibling pointer
+        if( hdr.sibling_ptr != NULL && key > hdr.split_key){
+          return (char*) hdr.sibling_ptr; // return sibling ptr
+        }
+        else{
+          return getPtr(hdr.cnt-1); // return rightmost ptr
+        }
       }
     }
 
@@ -593,18 +519,26 @@ class btree{
 
     void btree_insert(long long key, char* right){
       page* p = root;
-      //vector<page*> path;
-      //vector<page*> path(height+1);
+
+#ifndef VECTOR
       page* path[height+1];
-      //path.push_back(p);
       int top = 0;
       path[top++] = p;
+#else
+      vector<page*> path;
+      path.push_back(p);
+#endif
+
       while(p){
         if(p->hdr.flag!=LEAF){
           p = (page*) p->linear_search(key);
           //p = (page*) p->binary_search(key);
-          //path.push_back(p);
+
+#ifndef VECTOR
           path[top++] = p;
+#else
+          path.push_back(p);
+#endif
         }
         else{
           // found a leaf p
@@ -617,144 +551,148 @@ class btree{
 
       char *left = NULL;
       do{
-        assert(right!=NULL);
-        split_info *s = p->store(left, key, right, 1); // store
+        split_info *s = p->store(left, key, right, 1);  // store 
         p = NULL;
         if(s!=NULL){
           // split occurred
           // logging needed
-//          page *logPage = new page[2];
+//          page *logPage = new page;
 //          memcpy(logPage, s->left, sizeof(page));
-//          memcpy(logPage+1, s->right, sizeof(page));
-//          clflush((char*) logPage, 2*sizeof(page));
-          log.write((int8_t*)s->left, sizeof(page));
-          log.write((int8_t*)s->right, sizeof(page));
+          log.write((int8_t*)s->left,sizeof(page));
+          //memcpy(logPage+1, s->right, sizeof(page));
+//          clflush((char*) logPage, sizeof(page));
           // we need log frame header, but let's just skip it for now... need to fix it for later..
 
           page* overflown = p;
-          //p = (page*) path.back();
-          //path.pop_back();
-          p = (page*) path[--top];
-          //if(path.empty()){
-          if ( top == 0 ) {
-            // tree height grows here
-            page* new_root = new page(s->left, s->split_key, s->right);
-            root = new_root;
+#ifndef VECTOR
+          p = path[--top];
+          if(top==0){
+#else
+            p = (page*) path.back();
+            path.pop_back();
+            if(path.empty()){
+#endif
+              // tree height grows here
+              page* new_root = new page(s->left, s->split_key, s->right);
+              root = new_root;
 #ifdef DEBUG
-            printf("tree grows: root = %x\n", root);
-            root->print();
+              printf("tree grows: root = %x\n", root);
+              root->print();
 #endif 
-            //delete overflown;
+
+              //                  root->print();
+              height++;
+              delete s;
+              break;
+            }
+            else{
+              //page* parent = (page*) path.back();
+              //parent->store(s.split_key, (char*) s.right);
+#ifndef VECTOR
+              p = path[top-1];
+#else
+              p = (page*) path.back();
+#endif
+              key = s->split_key; 
+              right = (char*) s->right;
+            }
 
             delete s;
-            break;
           }
-          else{
-            // this part needs logging 
-            //p = (page*) path.back();
-            p = (page*) path[top-1];
-            left = (char*) s->left;
-            key = s->split_key; 
-            right = (char*) s->right;
-            assert(right!=NULL);
-
-            //delete overflown;
-          }
-
-          delete s;
+        } while(p!=NULL);
+        if (!log.isCommited()) {
+          log.commit();
         }
-      } while(p!=NULL);
-      if (!log.isCommited()) {
-        log.commit();
       }
-    }
 
-    void printAll(){
-      root->printAll();
-    }
-};
+      void printAll(){
+        root->printAll();
+      }
 
-int main(int argc,char** argv)
-{
-  int dummy=0;
-  btree bt;
-  struct timespec start, end;
+    };
 
-  //    printf("sizeof(page)=%lu\n", sizeof(page));
+    int main(int argc,char** argv)
+    {
+      int dummy=0;
+      btree bt;
+      struct timespec start, end;
 
-  if(argc<2) {
-    printf("Usage: %s NDATA\n", argv[0]);
-  }
-  int numData =atoi(argv[1]);
+      //    printf("sizeof(page)=%lu\n", sizeof(page));
 
-  assert(cardinality < 64);
+      if(argc<2) {
+        printf("Usage: %s NDATA\n", argv[0]);
+      }
+      int numData =atoi(argv[1]);
 
-  long *keys;
-  unsigned long *values;
-  keys = new long[(sizeof(long)*numData)];
-  values= new unsigned long[(sizeof(unsigned long)*numData)];
+      long *keys;
+      unsigned long *values;
+      keys = new long[(sizeof(long)*numData)];
+      values= new unsigned long[(sizeof(unsigned long)*numData)];
 
-  ifstream ifs;
-  ifs.open("../input_1b.txt");
+      ifstream ifs;
+      ifs.open("../input_1b.txt");
 
-  assert(ifs);
+      if(!ifs){
+        cout<<"error!"<<endl;
+      }
 
-  for(int i=0; i<numData; i++){
+      for(int i=0; i<numData; i++){
 #ifdef DEBUG
-    keys[i] = rand()%1000;
+        keys[i] = rand()%1000;
 #else
-    ifs >> keys[i]; 
+        ifs >> keys[i]; 
 #endif
-  }
+      }
 
-  ifs.close();
+      ifs.close();
 
-  clflush_cnt=0;
-  clock_gettime(CLOCK_MONOTONIC,&start);
-  for(int i=0;i<numData;i++){
+      clflush_cnt=0;
+      clock_gettime(CLOCK_MONOTONIC,&start);
+      for(int i=0;i<numData;i++){
 #ifdef DEBUG
-    printf("inserting %lld\n", keys[i]);
+        printf("inserting %lld\n", keys[i]);
 #endif
-    bt.btree_insert(keys[i], (char*) keys[i]);
+        bt.btree_insert(keys[i], (char*) keys[i]);
 #ifdef DEBUG
-    bt.btree_search(keys[i]);
+        bt.btree_search(keys[i]);
 #endif
-  }
-  clock_gettime(CLOCK_MONOTONIC,&end);
+      }
+      clock_gettime(CLOCK_MONOTONIC,&end);
 
-  long long elapsedTime = (end.tv_sec-start.tv_sec)*1000000000 + (end.tv_nsec-start.tv_nsec);
-  cout<<"INSERTION"<<endl;
-  cout<<"elapsedTime : "<<elapsedTime/1000<<endl;
-  cout<<"clflush_cnt : "<<clflush_cnt<<endl;
+      long long elapsedTime = (end.tv_sec-start.tv_sec)*1000000000 + (end.tv_nsec-start.tv_nsec);
+      cout<<"INSERTION"<<endl;
+      cout<<"elapsedTime : "<<elapsedTime/1000<<endl;
+      cout<<"clflush_cnt : "<<clflush_cnt<<endl;
 
-  char *garbage = new char[256*1024*1024];
-  for(int i=0;i<256*1024*1024;i++){
-    garbage[i] = i;
-  }
-  for(int i=100;i<256*1024*1024;i++){
-    garbage[i] += garbage[i-100];
-  }
+      char *garbage = new char[256*1024*1024];
+      for(int i=0;i<256*1024*1024;i++){
+        garbage[i] = i;
+      }
+      for(int i=100;i<256*1024*1024;i++){
+        garbage[i] += garbage[i-100];
+      }
 
-  clock_gettime(CLOCK_MONOTONIC,&start);
-  for(int i=0;i<numData;i++){
-    bt.btree_binary_search(keys[i]);
-  }
-  clock_gettime(CLOCK_MONOTONIC,&end);
+      clock_gettime(CLOCK_MONOTONIC,&start);
+      for(int i=0;i<numData;i++){
+        bt.btree_binary_search(keys[i]);
+      }
+      clock_gettime(CLOCK_MONOTONIC,&end);
 
-  elapsedTime = (end.tv_sec-start.tv_sec)*1000000000 + (end.tv_nsec-start.tv_nsec);
-  cout<<"BINARY SEARCH"<<endl;
-  cout<<"elapsedTime : "<<elapsedTime/1000 << "usec" <<endl;
+      elapsedTime = (end.tv_sec-start.tv_sec)*1000000000 + (end.tv_nsec-start.tv_nsec);
+      cout<<"BINARY SEARCH"<<endl;
+      cout<<"elapsedTime : "<<elapsedTime/1000 << "usec" <<endl;
 
-  clock_gettime(CLOCK_MONOTONIC,&start);
-  for(int i=0;i<numData;i++){
-    bt.btree_search(keys[i]);
-  }
-  clock_gettime(CLOCK_MONOTONIC,&end);
+      clock_gettime(CLOCK_MONOTONIC,&start);
+      for(int i=0;i<numData;i++){
+        bt.btree_search(keys[i]);
 
-  elapsedTime = (end.tv_sec-start.tv_sec)*1000000000 + (end.tv_nsec-start.tv_nsec);
-  cout<<"LINEAR SEARCH"<<endl;
-  cout<<"elapsedTime : "<<elapsedTime/1000 << "usec" <<endl;
+      }
+      clock_gettime(CLOCK_MONOTONIC,&end);
 
-}
+      elapsedTime = (end.tv_sec-start.tv_sec)*1000000000 + (end.tv_nsec-start.tv_nsec);
+      cout<<"LINEAR SEARCH"<<endl;
+      cout<<"elapsedTime : "<<elapsedTime/1000 << "usec" <<endl;
+
+    }
 
 
