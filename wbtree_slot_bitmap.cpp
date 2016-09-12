@@ -920,6 +920,21 @@ root->print();
       } while(p!=NULL);
     }
 
+    bool is_minimal(page *p) {
+      if (p->hdr.cnt > 0) return true;
+      return false;
+    }
+
+    page* find_rebalance(page *p, page *lnbr, page *rnbr, page *lanch,
+                         page *ranch) {
+      if (!is_minimal(p)) {
+      }
+    }
+
+    void btree_delete (const int64_t &key) {
+      root = find_rebalance(root, NULL, NULL, NULL, NULL, key);
+    }
+
     // UpdateInfo* btree_delete_rebalance(const int64_t &key, page *lnbr, page *p,
     //                                    page *rnbr) {
     //   int pos;
