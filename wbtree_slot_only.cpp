@@ -31,6 +31,8 @@
 
 using namespace std;
 
+unsigned long write_latency_in_ns=0;
+
 inline void mfence()
 {
   asm volatile("mfence":::"memory");
@@ -45,7 +47,9 @@ inline void clflush(char *data, int len)
   mfence();
   for(; ptr<data+len; ptr+=CACHE_LINE_SIZE){
     //printf("clflush ptr: %x\n", ptr);
+  unsigned long etsc = read_tsc() + (unsigned long)(write_latency_in_ns*CPU_FREQ_MHZ/1000);
     asm volatile("clflush %0" : "+m" (*(volatile char *)ptr));
+  while (read_tsc() < etsc) cpu_pause();
     clflush_cnt++;
     //printf("clflush cnt: %d\n", clflush_cnt);
   }
@@ -619,10 +623,11 @@ class btree{
 
       //    printf("sizeof(page)=%lu\n", sizeof(page));
 
-      if(argc<2) {
-        printf("Usage: %s NDATA\n", argv[0]);
+      if(argc<3) {
+        printf("Usage: %s NDATA Latency\n", argv[0]);
       }
       int numData =atoi(argv[1]);
+      write_latency_in_ns= atol(argv[2]);
 
       long *keys;
       unsigned long *values;
