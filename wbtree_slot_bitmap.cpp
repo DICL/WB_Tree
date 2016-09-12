@@ -598,6 +598,9 @@ rsibling->print();
       }
     }
 
+    void release(page *target, const int &flush) {
+      release(target->getKey(0), 1);
+    }
     MergeInfo* release(const int64_t &key, const int &flush) {
       return release(key, NULL, NULL, flush);
     }
@@ -809,11 +812,13 @@ class btree{
   private:
     int height;
     page* root;
+    page* junc;
 
   public:
     btree(){
       root = new page(LEAF);
       height = 1;
+      junc = NULL;
     }
 
     // binary search
@@ -920,19 +925,112 @@ root->print();
       } while(p!=NULL);
     }
 
-    bool is_minimal(page *p) {
-      if (p->hdr.cnt > 0) return true;
-      return false;
+    void btree_delete (const int64_t &key) {
+      junc = NULL;
+      root = find_delete_rebalance(root, NULL, NULL, NULL, NULL, key);
     }
 
-    page* find_rebalance(page *p, page *lnbr, page *rnbr, page *lanch,
-                         page *ranch) {
-      if (!is_minimal(p)) {
+    page* find_delete_rebalance(page *p, page *lnbr, page *rnbr, page *llca,
+                                page *rlca, const int64_t &key) {
+      if (p->hdr.cnt > 1) {
+        junc = NULL;
+      } else if (junc == NULL) {
+        // can merged to here
+        junc = p;
+      }
+
+      int pos;
+      page *nextl, *nextr;
+      page *nllca, *nrlca;
+      page *dead;
+      page *next = (page*)p->linear_search(key, pos);
+      if (p->hdr.flag != LEAF) {
+        if (next == p->getLeftMostPtr()) {
+          nextl = lnbr->getRightMostPtr();
+          nllca = llca;
+        } else {
+          nextl = p->getLeftPtr(pos);
+          nllca = p;
+        }
+        if (next == p->getRightMostPtr()) {
+          nextr = rnbr->getLeftMostPtr();
+          nrlca = rlca;
+        } else {
+          nextr = p->getRightPtr(pos);
+          nrlca = p;
+        }
+        dead = find_delete_rebalance(next, nextl, nextr, nllca, nrlca, key);
+      } else {
+        // p is LEAF
+        if (pos != -1) {
+          // key found.
+          dead = next;
+        } else {
+          dead = NULL;
+        }
+      }
+
+      if (dead == next) {
+        p->release(dead);
+        delete dead;
+      }
+
+      page *done;
+      if (junc == NULL) {
+        // balanced. nothing to do.
+        return NULL;
+      } else if (p == root) {
+        return collapse_root(p);
+      } else {
+        // there is an underutilized node.
+        // rebalance.
+        return rebalance(p, lnbr, rnbr, llca, rlca);
       }
     }
 
-    void btree_delete (const int64_t &key) {
-      root = find_rebalance(root, NULL, NULL, NULL, NULL, key);
+    page* collapse_root(page *old_root) {
+      if (old_root->hdr.flag == LEAF) {
+        return old_root;
+      } else {
+        page *new_root = old_root->hdr.leftmost_ptr;
+        delete old_root;
+        height = 1;
+        return new_root;
+      }
+    }
+
+    page* rebalance(page *p, page *lnbr, page *rnbr, page *llca, page *rlca) {
+      int lnbr_cnt = (lnbr != NULL)?lnbr->hdr.cnt:0;
+      int rnbr_cnt = (rnbr != NULL)?rnbr->hdr.cnt:0;
+      junc = (lnbr_cnt > rnbr_cnt)?lnbr:rnbr;
+      page *lca;
+      if (junc->hdr.cnt > 1) {
+        lca = (junc == lnbr)?llca:rlca;
+        done = shift(p, junc, lca);
+      } else {
+        lca = (junc == lnbr)?llca:rlca;
+        merge_node = child of lca;
+        done = merge(p, merge_node, lca);
+      }
+      return done;
+    }
+
+    page* shift(page *p, page *nbr, page *lca) {
+      if (p->hdr.flag != LEAF) {
+        
+      }
+
+      while (nbr->hdr.cnt - 1 >= p->hdr.cnt + 1) {
+        
+      }
+    }
+
+    page* merge(page *p, page *nbr, page *lca) {
+
+      if (p->hdr.flag == LEAF) {
+        //
+      }
+      return p;
     }
 
     // UpdateInfo* btree_delete_rebalance(const int64_t &key, page *lnbr, page *p,
