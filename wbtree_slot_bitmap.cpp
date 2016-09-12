@@ -32,6 +32,8 @@
 
 using namespace std;
 
+unsigned long write_latency_in_ns=0;
+
 inline void mfence()
 {
   asm volatile("mfence":::"memory");
@@ -46,7 +48,9 @@ inline void clflush(char *data, int len)
   mfence();
   for(; ptr<data+len; ptr+=CACHE_LINE_SIZE){
     //printf("clflush ptr: %x\n", ptr);
+  unsigned long etsc = read_tsc() + (unsigned long)(write_latency_in_ns*CPU_FREQ_MHZ/1000);
     asm volatile("clflush %0" : "+m" (*(volatile char *)ptr));
+  while (read_tsc() < etsc) cpu_pause();
     clflush_cnt++;
     //printf("clflush cnt: %d\n", clflush_cnt);
   }
@@ -136,7 +140,7 @@ class header{ // 27 bytes
     uint8_t flag; // 1 byte, leaf or internal
     uint8_t fragmented_bytes; // 1 byte
     page* leftmost_ptr; // 8 bytes
-    int64_t split_key; // 8 bytes
+    //int64_t split_key; // 8 bytes
     page* sibling_ptr; // 8 bytes
     friend class page;
     friend class btree;
@@ -265,6 +269,7 @@ class page{
 
       if ( (bitmap & 1) == 0 ) {
         // TODO: recovery
+        cerr << "bitmap error: recovery is required." << endl;
         bitmap += 1; 
         if(flush)
           clflush((char*) &bitmap, 1);
@@ -274,7 +279,7 @@ class page{
         register uint8_t slot_off = (uint8_t) nextSlotOff2();
         bitmap -= 1;
         if(flush) 
-          clflush((char*) &bitmap, 1);
+          clflush((char*) &bitmap, 8);
 
         if(hdr.cnt==0){  // this page is empty
           entry* new_entry = (entry*) &records[slot_off];
@@ -682,10 +687,11 @@ int main(int argc,char** argv)
 
   //    printf("sizeof(page)=%lu\n", sizeof(page));
 
-  if(argc<2) {
-    printf("Usage: %s NDATA\n", argv[0]);
+  if(argc<3) {
+    printf("Usage: %s NDATA Latency\n", argv[0]);
   }
   int numData =atoi(argv[1]);
+  write_latency_in_ns= atol(argv[2]);
 
   assert(cardinality < 64);
 
