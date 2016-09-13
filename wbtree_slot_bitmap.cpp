@@ -609,25 +609,16 @@ rsibling->print();
     page* release(page *target, const int &flush) {
       release(target->getKey(0), 1);
     }
+
     page* release(const int64_t &key, const int &flush) {
-      return release(key, NULL, NULL, flush);
-    }
-
-    page* release(const int &pos, const int &flush) {
-      return release(pos, NULL, NULL, flush);
-    }
-
-    page* release(const int64_t &key, page *left_nbr, page *right_nbr,
-                       const int &flush) {
       int pos = hdr.cnt;
       for (pos = 0; pos < hdr.cnt; ++pos) {
         if (records[slot_array[pos]].key == key) break;
       }
-      return release(pos, left_nbr, right_nbr, flush);
+      return release(pos, flush);
     }
 
-    page* release(const int &pos, page *left_nbr, page *right_nbr,
-                       const int &flush) {
+    page* release(const int &pos, const int &flush) {
       if (pos >= 0 && pos < hdr.cnt) {
         // calculate the entry bit.
         int64_t bit = (1UL << (slot_array[pos] + 1));
@@ -659,7 +650,6 @@ rsibling->print();
         if (flush) {
           clflush((char*)&bitmap, sizeof(int64_t));
         }
-        // return get_merge_info(left_nbr, right_nbr);
       } else {
         // invalid pos
 #ifdef DEBUG
@@ -820,13 +810,11 @@ class btree{
   private:
     int height;
     page* root;
-    page* udf;
 
   public:
     btree(){
       root = new page(LEAF);
       height = 1;
-      udf = NULL;
     }
 
     // binary search
@@ -934,16 +922,16 @@ root->print();
     }
 
     void btree_delete (const int64_t &key) {
-      udf = NULL;
       root = find_delete_rebalance(root, NULL, NULL, NULL, NULL, NULL, key);
     }
 
     page* find_delete_rebalance(page *p, page *lnbr, page *rnbr, page *parent,
                                 page *llca, page *rlca, const int64_t &key) {
+      page *udf = NULL;
       if (p->hdr.cnt > 1) {
         udf = NULL;
       } else if (udf == NULL) {
-        // can merged to here
+        // possible underflow point
         udf = p;
       }
 
@@ -954,72 +942,70 @@ root->print();
       page *next = (page*)p->linear_search(key, pos);
       if (p->hdr.flag != LEAF) {
         if (next == p->getLeftMostPtr()) {
-          nextl = lnbr->getLastPtr();
+          nextl = (lnbr != NULL)?lnbr->getLastPtr():NULL;
           nllca = llca;
         } else {
           nextl = p->getLeftPtr(pos);
           nllca = p;
         }
         if (next == p->getLastPtr()) {
-          nextr = rnbr->getLeftMostPtr();
+          nextr = (rnbr != NULL)?rnbr->getLeftMostPtr():NULL;
           nrlca = rlca;
         } else {
           nextr = p->getRightPtr(pos);
           nrlca = p;
         }
         dead = find_delete_rebalance(next, nextl, nextr, p, nllca, nrlca, key);
+        if (dead == next) {
+          p->release(dead, 1);
+          delete dead;
+        }
       } else {
         // p is LEAF
         if (pos != -1) {
           // key found.
-          dead = next;
+          p->release(pos, 1);
+          // dead = next;
         } else {
-          dead = NULL;
+          // dead = NULL;
         }
       }
 
-      if (dead == next) {
-        p->release(dead, 1);
-        delete dead;
+      if (p == root) {
+        if (p->hdr.flag != LEAF && p->hdr.cnt == 0 &&
+            p->hdr.leftmost_ptr != NULL) {
+          cout << "cnt= " << (int)p->hdr.cnt << endl;
+          page *new_root = p->hdr.leftmost_ptr;
+          delete p;
+          height = 1;
+          return new_root;
+        } else {
+          return p;
+        }
       }
-
       if (udf == NULL) {
         // balanced. nothing to do.
         return NULL;
-      } else if (p == root) {
-        return collapse_root(p);
       } else {
-        // there is an underutilized node.
-        // rebalance.
-        return rebalance(p, lnbr, rnbr, parent, llca, rlca);
-      }
-    }
-
-    page* collapse_root(page *old_root) {
-      if (old_root->hdr.flag == LEAF) {
-        return old_root;
-      } else {
-        page *new_root = old_root->hdr.leftmost_ptr;
-        delete old_root;
-        height = 1;
-        return new_root;
+        // cnt = at most 1, rebalance.
+        return rebalance(p, lnbr, rnbr, parent, llca, rlca, udf);
       }
     }
 
     page* rebalance(page *p, page *lnbr, page *rnbr, page *parent, page *llca,
-                    page *rlca) {
+                    page *rlca, page *udf) {
       if ((lnbr == NULL || lnbr->hdr.cnt <= 1) &&
           (rnbr == NULL || rnbr->hdr.cnt <= 1)) {
         if (llca == parent) {
-          return merge(lnbr, p, llca);
+          return merge(lnbr, p, llca, udf);
         } else {
-          return merge(p, rnbr, rlca);
+          return merge(p, rnbr, rlca, udf);
         }
       } else {
         if (lnbr != NULL && lnbr->hdr.cnt > 1) {
-          return shift(lnbr, p, llca);
+          return shift(lnbr, p, llca, udf);
         } else {
-          return shift(p, rnbr, rlca);
+          return shift(p, rnbr, rlca, udf);
         }
       }
     }
@@ -1058,7 +1044,7 @@ root->print();
     }
 
     // Shift
-    page* shift(page *left, page *right, page *lca) {
+    page* shift(page *left, page *right, page *lca, page *udf) {
       if (left->hdr.flag == LEAF) {
         if (left->hdr.cnt > right->hdr.cnt) {
           // shift left to right
@@ -1092,24 +1078,20 @@ root->print();
       return NULL;
     }
 
-    page* merge(page *left, page *right, page *lca) {
-      page *udf_bak = udf;
+    page* merge(page *left, page *right, page *lca, page *udf) {
+      page *tmp_udf;
       if (left->hdr.cnt > right->hdr.cnt) {
         // merge right into left.
-        shift(left, right, lca);
-        if (udf_bak == left || udf_bak == right) {
+        shift(left, right, lca, tmp_udf);
+        if (udf == left || udf == right) {
           udf = NULL;
-        } else {
-          udf = udf_bak;
         }
         return right;
       } else {
         // merge left into right.
-        shift(left, right, lca);
-        if (udf_bak == left || udf_bak == right) {
+        shift(left, right, lca, tmp_udf);
+        if (udf == left || udf == right) {
           udf = NULL;
-        } else {
-          udf = udf_bak;
         }
         return left;
       }
