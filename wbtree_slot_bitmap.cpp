@@ -330,9 +330,6 @@ class page{
             clflush((char*) slot_array, sizeof(uint8_t)*hdr.cnt);
 
           uint64_t bit = (1UL << (slot_off+1));
-#ifdef DEBUG
-          uint64_t backup_bitmap = bitmap;
-#endif
           bitmap |= bit;
           bitmap+=1;
           //          bitset<64> bm(bitmap);
@@ -398,8 +395,8 @@ class page{
 
         bitmap -= bitmap_change;
         bitmap += 1;
-        this->hdr.cnt = m;
-        this->hdr.sibling_ptr = rsibling;
+        hdr.cnt = m;
+        hdr.sibling_ptr = rsibling;
 
         if(flush){
           clflush((char*) this, sizeof(page));
@@ -417,7 +414,7 @@ class page{
         printf("Split done\n");
         printf("Split key=%lld\n", s->split_key);
         printf("LEFT\n");
-        lsibling->print();
+        print();
         printf("RIGHT\n");
         rsibling->print();
 #endif
@@ -638,6 +635,7 @@ class btree{
             // tree height grows here
             page* new_root = new page(s->left, s->split_key, s->right);
             root = new_root;
+            height++;
 #ifdef DEBUG
             printf("tree grows: root = %x\n", root);
             root->print();
@@ -717,7 +715,7 @@ int main(int argc,char** argv)
 
   for(int i=0; i<numData; i++){
 #ifdef DEBUG
-    keys[i] = rand()%1000;
+    keys[i] = rand()%10000000;
 #else
     ifs >> keys[i]; 
 #endif
