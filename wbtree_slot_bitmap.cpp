@@ -57,27 +57,35 @@ inline void clflush(char *data, int len)
 class btree_log_header {
   private:
     uint64_t pgid;
-    uint64_t size;
+    uint64_t txid;
     uint8_t commited;
 
   public:
-    btree_log_header () : pgid(-1), size(0), commited(0) { } // 0xFFFFFFFFFFFFFFFF
+    btree_log_header () : pgid(-1), txid(-1), commited(0) { } // pgid, txid = 0xFFFFFFFFFFFFFFFF
 
-    btree_log_header(uint64_t id, uint64_t s) : pgid(id), size(s), commited(0) { }
+    btree_log_header(uint64_t _pgid, uint64_t _txid) : pgid(_pgid), txid(_txid), commited(0) { }
 
-    btree_log_header(const btree_log_header& h) : pgid(h.pgid), size(h.size), commited(0) { }
+    btree_log_header(const btree_log_header& h) 
+      : pgid(h.pgid), txid(h.txid), commited(0) { 
+      if (h.commited == 1) {
+        // because vector can double its array
+        commit();
+      }
+    }
 
     void setId(uint64_t id) {
       pgid = id;
     }
 
-    void setSize(uint64_t s) {
-      size = s;
+    void setTxid(uint64_t id) {
+      txid = id;
     }
 
     void commit() {
-      commited = 1;
-      clflush((char*)this, sizeof(btree_log_header));
+      if ( commited == 0 ){
+        commited = 1;
+        clflush((char*)this, sizeof(btree_log_header));
+      }
     }
 
     void uncommit() {
@@ -88,8 +96,8 @@ class btree_log_header {
       return pgid;
     }
 
-    uint64_t getSize() {
-      return size;
+    uint64_t getTxid() {
+      return txid;
     }
 
     uint8_t isCommited() {
@@ -98,7 +106,7 @@ class btree_log_header {
 
     void print() {
       cout << "ID: " << pgid << endl;
-      cout << "Size: " << size << endl;
+      cout << "TXID: " << txid << endl;
       cout << "Commit: " << commited << endl;
     }
 };
@@ -108,19 +116,20 @@ class btree_log {
     uint64_t capacity;
     uint64_t size;
     uint64_t prev_size;
+    uint64_t txid;
+    int last_idx;
     int8_t* log_pg;
     vector<btree_log_header> log_header;
     btree_log_header header;
-    bool commited;
 
   public:
     btree_log(uint64_t cap) 
-      : capacity(cap), size(0), prev_size(0) {
+      : capacity(cap), size(0), prev_size(0), txid(0), last_idx(0) {
       log_pg = (int8_t*)malloc(capacity);
     }
     
     btree_log () 
-      : capacity(0), size(0), prev_size(0), log_pg(NULL) { }
+      : capacity(0), size(0), prev_size(0), txid(0), log_pg(NULL), last_idx(0) { }
 
     ~btree_log() {
       delete log_pg;
@@ -133,10 +142,9 @@ class btree_log {
 
     void write(int8_t* ptr, uint64_t s) {
      assert ( size + s < capacity );
-     if ( commited ) {
-       commited = false;
-       header.setId((uint64_t)ptr);
-     }
+     header.setId((uint64_t)ptr);
+     header.setTxid(txid);
+     log_header.push_back(header);
      memcpy(log_pg + size, ptr, s);
      size += s;
     }
@@ -148,19 +156,19 @@ class btree_log {
         int8_t* new_pg = (int8_t*)malloc(capacity);
         memcpy(new_pg, log_pg, size);
         delete log_pg;
+        clflush((char*) new_pg, size);
         log_pg = new_pg;
-        clflush((char*) log_pg, size);
       }
       clflush((char*) log_pg + prev_size, size-prev_size);
-      header.setSize(size-prev_size);
-      log_header.push_back(header);
-      log_header.back().commit();
+      for (int i = last_idx; i < log_header.size(); ++i) {
+        log_header[i].commit();
+      }
       prev_size = size;
-      commited = true;
+      last_idx = log_header.size();
     }
 
     bool isCommited() {
-      return commited;
+      return size == prev_size;
     }
 };
 
@@ -672,7 +680,6 @@ class btree{
 //          memcpy(logPage+1, s->right, sizeof(page));
 //          clflush((char*) logPage, 2*sizeof(page));
           log.write((int8_t*)s->left, sizeof(page));
-          log.write((int8_t*)s->right, sizeof(page));
           // we need log frame header, but let's just skip it for now... need to fix it for later..
 
           page* overflown = p;
