@@ -485,8 +485,10 @@ rsibling->print();
       for (int i = 0; i < hdr.cnt; ++i) {
         if ((page*)getPtr(i) == target) {
           release(i, 1);
+          return this;
         }
       }
+      return NULL;
     }
 
     page* release(const int64_t &key, const int &flush) {
@@ -804,20 +806,20 @@ root->print();
 
     void btree_delete (const int64_t &key) {
       udf = NULL;
-      root = find_delete_rebalance(root, NULL, NULL, NULL, NULL, NULL, key);
+      root = find_delete_rebalance(root, NULL, NULL, NULL, NULL, key);
       rearr_key(root);
     }
 
-    page* find_delete_rebalance(page *p, page *lnbr, page *rnbr, page *parent,
+    page* find_delete_rebalance(page *p, page *lnbr, page *rnbr, 
                                 page *llca, page *rlca, const int64_t &key) {
-      if (p->hdr.cnt > 1) {
+      if (p->hdr.cnt >= cardinality / 2) {
         udf = NULL;
       } else if (udf == NULL) {
         // possible lowest underflow point
         udf = p;
       }
 
-      int pos;
+      int pos = -1;
       page *nextl, *nextr;
       page *nllca, *nrlca;
       page *dead = NULL;
@@ -837,21 +839,21 @@ root->print();
           nextr = p->getRightPtr(pos, rnbr);
           nrlca = p;
         }
-        dead = find_delete_rebalance(next, nextl, nextr, p, nllca, nrlca, key);
+        dead = find_delete_rebalance(next, nextl, nextr, nllca, nrlca, key);
       } else {
         // p is LEAF
-        if (pos != -1) {
+        if (pos >= 0 && pos < p->hdr.cnt) {
           // key found.
           p->release(pos, 1);
         } else {
           dead = NULL;
         }
       }
-      if (dead == NULL && udf == p) {
-        udf = NULL;
-      } else if (dead == next) {
-        p->release(dead, 1);
-        delete dead;
+
+      if (dead != NULL && dead == next) {
+        if (p->release(dead, 1) == p) {
+          delete dead;
+        }
       }
 
       if (udf == NULL) {
@@ -871,47 +873,61 @@ root->print();
             return p;
           }
         } else {
-          return rebalance(p, lnbr, rnbr, parent, llca, rlca);
+          return rebalance(p, lnbr, rnbr, llca, rlca);
         }
       }
     }
 
-    page* rebalance(page *p, page *lnbr, page *rnbr, page *parent, page *llca,
+    page* rebalance(page *p, page *lnbr, page *rnbr, page *llca,
                     page *rlca) {
-      if (lnbr != NULL && lnbr->hdr.cnt > 1) {
-        p->store(lnbr->getKey(lnbr->hdr.cnt - 1),
-                 lnbr->getPtr(lnbr->hdr.cnt - 1), 1);
-        lnbr->release(lnbr->hdr.cnt - 1, 1);
-        if (udf == p) udf = NULL;
-        cout << "Shift" << endl;
-        return NULL;
-      } else if (rnbr != NULL && rnbr->hdr.cnt > 1) {
-        if (rnbr->hdr.flag == LEAF) {
-          p->store(rnbr->getKey(0), rnbr->getPtr(0), 1);
-          rnbr->release(0, 1);
-        } else {
-          p->store(rnbr->hdr.leftmost_ptr->getKey(0),
-                   (char*)rnbr->hdr.leftmost_ptr, 1);
-          rnbr->hdr.leftmost_ptr = (page*)rnbr->getPtr(0);
-          rnbr->release(0, 1);
+      if (lnbr != NULL && lnbr->hdr.cnt > cardinality / 2) {
+        while (lnbr->hdr.cnt > p->hdr.cnt) {
+          p->store(lnbr->getKey(lnbr->hdr.cnt - 1),
+                   lnbr->getPtr(lnbr->hdr.cnt - 1), 1);
+          lnbr->release(lnbr->hdr.cnt - 1, 1);
         }
         if (udf == p) udf = NULL;
         cout << "Shift" << endl;
         return NULL;
-      } else {
-        if (p->hdr.flag != LEAF) {
-          if (lnbr != NULL && lnbr->hdr.cnt < cardinality) {
-            lnbr->store(p->hdr.leftmost_ptr->getKey(0),
-                        (char*)p->hdr.leftmost_ptr, 1);
-          } else if (rnbr != NULL && rnbr->hdr.cnt < cardinality) {
-            rnbr->store(p->hdr.leftmost_ptr->getKey(0),
-                        (char*)p->hdr.leftmost_ptr, 1);
+      } else if (rnbr != NULL && rnbr->hdr.cnt > cardinality / 2) {
+        while (rnbr->hdr.cnt > p->hdr.cnt) {
+          if (rnbr->hdr.flag == LEAF) {
+            p->store(rnbr->getKey(0), rnbr->getPtr(0), 1);
+            rnbr->release(0, 1);
+          } else {
+            p->store(rnbr->hdr.leftmost_ptr->getKey(0),
+                     (char*)rnbr->hdr.leftmost_ptr, 1);
+            rnbr->hdr.leftmost_ptr = (page*)rnbr->getPtr(0);
+            rnbr->release(0, 1);
           }
         }
-        if (udf == lnbr || udf == rnbr) udf = NULL;
+        if (udf == p) udf = NULL;
+        cout << "Shift" << endl;
+        return NULL;
+      } else if (lnbr != NULL && lnbr->hdr.cnt <= cardinality / 2) {
+        for (int i = 0; i < p->hdr.cnt; ++i) {
+          lnbr->store(p->getKey(i), p->getPtr(i), 1);
+        }
+        if (p->hdr.flag != LEAF) {
+          lnbr->store(p->hdr.leftmost_ptr->getKey(0),
+                      (char*)p->hdr.leftmost_ptr, 1);
+        }
+        if (udf == lnbr) udf = NULL;
+        cout << "Merge" << endl;
+        return p;
+      } else if (rnbr != NULL && rnbr->hdr.cnt <= cardinality / 2) {
+        for (int i = 0; i < p->hdr.cnt; ++i) {
+          rnbr->store(p->getKey(i), p->getPtr(i), 1);
+        }
+        if (p->hdr.flag != LEAF) {
+          rnbr->store(p->hdr.leftmost_ptr->getKey(0),
+                      (char*)p->hdr.leftmost_ptr, 1);
+        }
+        if (udf == rnbr) udf = NULL;
         cout << "Merge" << endl;
         return p;
       }
+      return NULL;
     }
 
     void update_downward(page *p, const int64_t &new_key) {
@@ -1115,7 +1131,7 @@ printf("inserting %lld\n", keys[i]);
   cout<<"LINEAR SEARCH"<<endl;
   cout<<"elapsedTime : "<<elapsedTime/1000 << "usec" <<endl;
 
-  if (!bt.btree_ck()) return 0;
+  // if (!bt.btree_ck()) return 0;
 
 
   clflush_cnt = 0;
