@@ -1125,7 +1125,7 @@ int main(int argc,char** argv)
   values= new unsigned long[(sizeof(unsigned long)*numData)];
 
   ifstream ifs;
-  ifs.open("../input_small.txt");
+  ifs.open("../input_1b.txt");
 
   assert(ifs);
 
