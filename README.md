@@ -1,14 +1,14 @@
 # WB_Tree
 ## BITMAP + SLOT ( 1M ) 
 ### INSERTION
-- elapsedTime : 1802822
-- clflush_cnt : 6545461
+- elapsedTime : 1808985
+- clflush_cnt : 6546016
 
-### BINARY SEARCH
-- elapsedTime : 538295usec
+###BINARY SEARCH
+- elapsedTime : 569605usec
 
-### LINEAR SEARCH
-- elapsedTime : 350543usec
+###LINEAR SEARCH
+- elapsedTime : 380023usec
 
 ## SLOT ONLY ( 1M )
 ### INSERTION

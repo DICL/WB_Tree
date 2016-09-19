@@ -14,3 +14,6 @@ bitmap_debug: wbtree_slot_bitmap.cpp
 slot_debug: wbtree_slot_only.cpp
 	g++ -o wbtree_slot_only wbtree_slot_only.cpp -lrt -g
 
+clean:
+	rm -rf wbtree_slot_only
+	rm -rf wbtree_slot_bitmap

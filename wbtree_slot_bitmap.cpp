@@ -58,64 +58,122 @@ inline void clflush(char *data, int len)
 
 }
 
-class btree_log {
+class btree_log_header {
   private:
-    uint32_t capacity;
-    uint32_t size;
-    uint32_t prev_size;
-    int8_t* log_pg;
-    bool commited;
-    vector<uint32_t> tx_cnt;
+    uint64_t pgid;
+    uint64_t txid;
+    uint8_t commited;
 
   public:
-    btree_log(uint32_t cap) {
-      capacity = cap;
-      size = 0;
-      prev_size = 0;
+    btree_log_header () : pgid(-1), txid(-1), commited(0) { } // pgid, txid = 0xFFFFFFFFFFFFFFFF
+
+    btree_log_header(uint64_t _pgid, uint64_t _txid) : pgid(_pgid), txid(_txid), commited(0) { }
+
+    btree_log_header(const btree_log_header& h) 
+      : pgid(h.pgid), txid(h.txid), commited(0) { 
+      if (h.commited == 1) {
+        // because vector can double its array
+        commit();
+      }
+    }
+
+    void setId(uint64_t id) {
+      pgid = id;
+    }
+
+    void setTxid(uint64_t id) {
+      txid = id;
+    }
+
+    void commit() {
+      if ( commited == 0 ){
+        commited = 1;
+        clflush((char*)this, sizeof(btree_log_header));
+      }
+    }
+
+    void uncommit() {
+      commited = 0;
+    }
+
+    uint64_t getId() {
+      return pgid;
+    }
+
+    uint64_t getTxid() {
+      return txid;
+    }
+
+    uint8_t isCommited() {
+      return commited;
+    }
+
+    void print() {
+      cout << "ID: " << pgid << endl;
+      cout << "TXID: " << txid << endl;
+      cout << "Commit: " << commited << endl;
+    }
+};
+
+class btree_log {
+  private:
+    uint64_t capacity;
+    uint64_t size;
+    uint64_t prev_size;
+    uint64_t txid;
+    int last_idx;
+    int8_t* log_pg;
+    vector<btree_log_header> log_header;
+    btree_log_header header;
+
+  public:
+    btree_log(uint64_t cap) 
+      : capacity(cap), size(0), prev_size(0), txid(0), last_idx(0) {
       log_pg = (int8_t*)malloc(capacity);
-      commited = true;
     }
     
-    btree_log () {
-      capacity = 0;
-      size = 0;
-      prev_size = 0;
-      log_pg = NULL;
-      commited = true;
-    }
+    btree_log () 
+      : capacity(0), size(0), prev_size(0), txid(0), log_pg(NULL), last_idx(0) { }
 
     ~btree_log() {
       delete log_pg;
     }
 
-    void init(uint32_t cap) {
+    void init(uint64_t cap) {
       capacity = cap;
       log_pg = (int8_t*)malloc(capacity);
     }
 
-    void write(int8_t* ptr, uint32_t s) {
+    void write(int8_t* ptr, uint64_t s) {
      assert ( size + s < capacity );
+     header.setId((uint64_t)ptr);
+     header.setTxid(txid);
+     log_header.push_back(header);
      memcpy(log_pg + size, ptr, s);
      size += s;
-     commited = false;
     }
 
     void commit() {
+      //cout << "Commit!: " << size << "\t" << capacity * 0.7 << endl;
       if (size > capacity * 0.7) {
         capacity = 1.5 * capacity;
         int8_t* new_pg = (int8_t*)malloc(capacity);
         memcpy(new_pg, log_pg, size);
         delete log_pg;
+        clflush((char*) new_pg, size);
         log_pg = new_pg;
       }
       clflush((char*) log_pg + prev_size, size-prev_size);
-      tx_cnt.push_back(size);
-      prev_size = tx_cnt.back();
-      commited = true;
+      for (int i = last_idx; i < log_header.size(); ++i) {
+        log_header[i].commit();
+      }
+      prev_size = size;
+      last_idx = log_header.size();
+      txid++;
     }
 
     bool isCommited() {
-      return commited;
+      return size == prev_size;
     }
 };
 
@@ -335,9 +393,6 @@ class page{
             clflush((char*) slot_array, sizeof(uint8_t)*hdr.cnt);
 
           uint64_t bit = (1UL << (slot_off+1));
-#ifdef DEBUG
-          uint64_t backup_bitmap = bitmap;
-#endif
           bitmap |= bit;
           bitmap+=1;
           //          bitset<64> bm(bitmap);
@@ -403,8 +458,8 @@ class page{
 
         bitmap -= bitmap_change;
         bitmap += 1;
-        this->hdr.cnt = m;
-        this->hdr.sibling_ptr = rsibling;
+        hdr.cnt = m;
+        hdr.sibling_ptr = rsibling;
 
         if(flush){
           clflush((char*) this, sizeof(page));
@@ -422,7 +477,7 @@ class page{
         printf("Split done\n");
         printf("Split key=%lld\n", s->split_key);
         printf("LEFT\n");
-        lsibling->print();
+        print();
         printf("RIGHT\n");
         rsibling->print();
 #endif
@@ -631,7 +686,6 @@ class btree{
 //          memcpy(logPage+1, s->right, sizeof(page));
 //          clflush((char*) logPage, 2*sizeof(page));
           log.write((int8_t*)s->left, sizeof(page));
-          log.write((int8_t*)s->right, sizeof(page));
           // we need log frame header, but let's just skip it for now... need to fix it for later..
 
           page* overflown = p;
@@ -643,6 +697,7 @@ class btree{
             // tree height grows here
             page* new_root = new page(s->left, s->split_key, s->right);
             root = new_root;
+            height++;
 #ifdef DEBUG
             printf("tree grows: root = %x\n", root);
             root->print();
@@ -723,7 +778,7 @@ int main(int argc,char** argv)
 
   for(int i=0; i<numData; i++){
 #ifdef DEBUG
-    keys[i] = rand()%1000;
+    keys[i] = rand()%10000000;
 #else
     ifs >> keys[i]; 
 #endif
