@@ -164,6 +164,7 @@ class btree_log {
       }
       prev_size = size;
       last_idx = log_header.size();
+      txid++;
     }
 
     bool isCommited() {
