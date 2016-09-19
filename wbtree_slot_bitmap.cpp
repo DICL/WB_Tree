@@ -1079,24 +1079,32 @@ root->print();
       return p->getKey(0);
     }
 
-    // bool btree_check(page *p) {
-    //   if (p->hdr.flag == LEAF) {
-    //     return true;
-    //   }
-    //   for (int i = 0; i < p->hdr.cnt; ++i) {
-    //     if (((page*)p->getPtr(i))->getKey(0) != p->getKey(i)) {
-    //       cout << "parent " << i << "th " << "key= " << p->getKey(i) << endl;
-    //       cout << "child first key= " << ((page*)p->getPtr(i))->getKey(0) <<
-    //               endl;
-    //       return false;
-    //     }
-    //     return btree_check((page*)p->getPtr(i));
-    //   }
-    // }
-
-    // bool btree_ck() {
-    //   return btree_check(root);
-    // }
+    int64_t btree_check(page *p, bool &is_valid) {
+      if (p->hdr.flag == LEAF) {
+        return p->getKey(0);
+      }
+      for (int i = 0; i < p->hdr.cnt; ++i) {
+        int64_t ret = btree_check((page*)p->getPtr(i), is_valid);
+        if (!is_valid) return 0;
+        if (ret != p->getKey(i)) {
+          is_valid = false;
+          return 0;
+        }
+      }
+      int64_t min = btree_check(p->hdr.leftmost_ptr, is_valid);
+      if (!is_valid) return 0;
+      if (p->hdr.cnt > 0 && !(min < p->getKey(0))) {
+        is_valid = false;
+        return 0;
+      }
+      return min;
+    }
+    
+    bool btree_ck() {
+      bool ret = true;
+      btree_check(root, ret);
+      return ret;
+    }
 
     void printAll(){
       root->printAll();
@@ -1125,7 +1133,7 @@ int main(int argc,char** argv)
   values= new unsigned long[(sizeof(unsigned long)*numData)];
 
   ifstream ifs;
-  ifs.open("../input_1b.txt");
+  ifs.open("../input_small.txt");
 
   assert(ifs);
 
@@ -1186,7 +1194,7 @@ printf("inserting %lld\n", keys[i]);
   cout<<"LINEAR SEARCH"<<endl;
   cout<<"elapsedTime : "<<elapsedTime/1000 << "usec" <<endl;
 
-  // if (!bt.btree_ck()) return 0;
+  if (!bt.btree_ck()) return 0;
 
 
   clflush_cnt = 0;
