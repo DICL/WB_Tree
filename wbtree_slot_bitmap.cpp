@@ -24,7 +24,7 @@
 //  #define PAGESIZE 256
 #endif
 
-#define CACHE_LINE_SIZE 64 
+#define CACHE_LINE_SIZE 64
 
 #define LEAF 1
 #define INTERNAL 0
@@ -89,8 +89,8 @@ class btree_log_header {
 
     btree_log_header(uint64_t _pgid, uint64_t _txid) : pgid(_pgid), txid(_txid), commited(0) { }
 
-    btree_log_header(const btree_log_header& h) 
-      : pgid(h.pgid), txid(h.txid), commited(0) { 
+    btree_log_header(const btree_log_header& h)
+      : pgid(h.pgid), txid(h.txid), commited(0) {
         if (h.commited == 1) {
           // because vector can double its array
           commit();
@@ -147,12 +147,12 @@ class btree_log {
     btree_log_header header;
 
   public:
-    btree_log(uint64_t cap) 
+    btree_log(uint64_t cap)
       : capacity(cap), size(0), prev_size(0), txid(0), last_idx(0) {
         log_pg = (int8_t*)malloc(capacity);
       }
 
-    btree_log () 
+    btree_log ()
       : capacity(0), size(0), prev_size(0), txid(0), log_pg(NULL), last_idx(0) { }
 
     ~btree_log() {
@@ -244,7 +244,7 @@ class page{
     entry records[cardinality]; // slots in persistent memory
 
     uint64_t bitmap; // 0 or 1 for validation, rest for entries
-    uint8_t slot_array[cardinality];  
+    uint8_t slot_array[cardinality];
 
   public:
     page(){}
@@ -255,7 +255,7 @@ class page{
       hdr.cnt=0;
       hdr.flag=f;
       hdr.fragmented_bytes=0;
-      hdr.leftmost_ptr = NULL;  
+      hdr.leftmost_ptr = NULL;
 
       hdr.split_key = 0;
       hdr.sibling_ptr = NULL;
@@ -268,7 +268,7 @@ class page{
       hdr.cnt=0;
       hdr.flag=INTERNAL;
       hdr.fragmented_bytes=0;
-      hdr.leftmost_ptr = left;  
+      hdr.leftmost_ptr = left;
       hdr.split_key = 0;
       hdr.sibling_ptr = NULL;
 
@@ -315,7 +315,7 @@ class page{
       bitset<64> bm (bitmap);
       cout << hdr.cnt << endl;
       cout << bm << endl;
-#endif 
+#endif
       cout << "no space: " << bitmap << endl;
       assert(!"not enough space: This should not happen\n");
     }
@@ -426,7 +426,7 @@ class page{
       return (entry*) &records[slot_array[i]];
     }
 
-    split_info* store(int64_t key, char* ptr, int flush ) 
+    split_info* store(int64_t key, char* ptr, int flush )
     {
       return store(NULL, key, ptr, flush );
     }
@@ -435,7 +435,7 @@ class page{
       return store(NULL, target_entry->key, target_entry->ptr, flush);
     }
 
-    split_info* store(char* left, int64_t key, char* right, int flush ) 
+    split_info* store(char* left, int64_t key, char* right, int flush )
     {
 #ifdef DEBUG
       printf("\n-----------------------\nBEFORE STORE %d\n", key);
@@ -445,7 +445,7 @@ class page{
       if ( (bitmap & 1) == 0 ) {
         // TODO: recovery
         cerr << "bitmap error: recovery is required." << endl;
-        bitmap += 1; 
+        bitmap += 1;
         if(flush)
           clflush((char*) &bitmap, 8);
       }
@@ -453,7 +453,7 @@ class page{
         // have space
         register uint8_t slot_off = (uint8_t) nextSlotOff2();
         bitmap -= 1;
-        if(flush) 
+        if(flush)
           clflush((char*) &bitmap, 8);
 
         if(hdr.cnt==0){  // this page is empty
@@ -478,7 +478,7 @@ class page{
           if(flush)
             clflush((char*) &bitmap, 8);
 
-          hdr.cnt++; 
+          hdr.cnt++;
           assert(bitmap < error);
         }
         else{
@@ -535,20 +535,20 @@ class page{
         printf("====OVERFLOW OVERFLOW OVERFLOW====\n");
         print();
 #endif
-        //page* lsibling = new page(hdr.flag); 
+        //page* lsibling = new page(hdr.flag);
         //        bitset<64> map(bitmap);
         //        cout << hdr.cnt << ":\t" << map << endl;
-        page* rsibling = new page(hdr.flag); 
+        page* rsibling = new page(hdr.flag);
         register int m = (int) ceil(hdr.cnt/2);
         uint64_t bitmap_change = 0;
         //int n = 0;
 
         bitmap -= 1;
-        if(flush) 
+        if(flush)
           clflush((char*) &bitmap, 8);
 
         // TODO: redo logging?
-        // Maybe I can... 
+        // Maybe I can...
         //split_info s((page*)this, (uint64_t) records[slot_array[m]].key, (page*) rsibling);
         split_info *s = new split_info((page*)this, (uint64_t) records[slot_array[m]].key, (page*) rsibling);
 
@@ -621,24 +621,24 @@ class page{
           // TODO: recovery
           bitmap |= 1UL;
           if (flush) {
-            clflush((char*)&bitmap, sizeof(int64_t));
+            clflush((char*)&bitmap, sizeof(uint64_t));
           }
         }
         // invalidate the page.
         bitmap &= 0xFFFFFFFFFFFFFFFE;
         if (flush) {
-          clflush((char*)&bitmap, sizeof(int64_t));
+          clflush((char*)&bitmap, sizeof(uint64_t));
         }
         // update the key.
         entry *tmp_entry = &records[slot_array[pos]];
         tmp_entry->key = new_key;
         if (flush) {
-          clflush((char*)tmp_entry, sizeof(entry));
+          clflush((char*)&tmp_entry->key, sizeof(int64_t));
         }
         // validate the page
         bitmap |= 1UL;
         if (flush) {
-          clflush((char*)&bitmap, sizeof(int64_t));
+          clflush((char*)&bitmap, sizeof(uint64_t));
         }
       } else {
 #ifdef DEBUG
@@ -685,25 +685,25 @@ class page{
         hdr.leftmost_ptr = new_lm;
       } else if (pos >= 0 && pos < hdr.cnt) {
         // calculate the entry bit.
-        int64_t bit = (1UL << (slot_array[pos] + 1));
+        uint64_t bit = (1UL << (slot_array[pos] + 1));
         if (bitmap & 1UL != 1UL) {
           // TODO: recovery
           bitmap |= 1UL;
           if (flush) {
-            clflush((char*)&bitmap, sizeof(int64_t));
+            clflush((char*)&bitmap, sizeof(uint64_t));
           }
         }
         // invalidate the page.
         bitmap &= 0xFFFFFFFFFFFFFFFE;
         if (flush) {
-          clflush((char*)&bitmap, sizeof(int64_t));
+          clflush((char*)&bitmap, sizeof(uint64_t));
         }
         // update slot array
         for (int i = pos; i < hdr.cnt - 1; ++i) {
           slot_array[i] = slot_array[i + 1];
         }
         if (flush) {
-          clflush((char*)slot_array, sizeof(uint16_t) * (hdr.cnt - 1));
+          clflush((char*)slot_array, sizeof(uint8_t) * (hdr.cnt - 1));
         }
         // update header count
         --hdr.cnt;
@@ -712,7 +712,7 @@ class page{
         // validate the page
         bitmap |= 1UL;
         if (flush) {
-          clflush((char*)&bitmap, sizeof(int64_t));
+          clflush((char*)&bitmap, sizeof(uint64_t));
         }
       } else {
         // invalid pos
@@ -792,7 +792,7 @@ class page{
             return records[slot_array[i-1]].ptr;
           }
         }
-        // visit rightmost pointer 
+        // visit rightmost pointer
         return getPtr(hdr.cnt-1); // return rightmost ptr
       }
     }
@@ -824,7 +824,7 @@ class page{
             return records[slot_array[i - 1]].ptr;
           }
         }
-        // visit rightmost pointer 
+        // visit rightmost pointer
         pos = hdr.cnt - 1;
         return getPtr(hdr.cnt - 1); // return rightmost ptr
       }
@@ -943,7 +943,7 @@ class btree{
         }
       }
 
-      if(p==NULL) 
+      if(p==NULL)
         printf("something wrong.. p is null\n");
 
       char *left = NULL;
@@ -974,18 +974,18 @@ class btree{
 #ifdef DEBUG
             printf("tree grows: root = %x\n", root);
             root->print();
-#endif 
+#endif
             //delete overflown;
 
             delete s;
             break;
           }
           else{
-            // this part needs logging 
+            // this part needs logging
             //p = (page*) path.back();
             p = (page*) path[top-1];
             left = (char*) s->left;
-            key = s->split_key; 
+            key = s->split_key;
             right = (char*) s->right;
             assert(right!=NULL);
 
@@ -1000,14 +1000,22 @@ class btree{
       }
     }
 
-    void btree_delete (const int64_t &key) {
+    void btree_delete (const int64_t &key, const int &flush) {
       udf = NULL;  // udf: highest possible underflow point connected from leaf.
-      page *tmp_root = find_delete_rebalance(root, NULL, NULL, NULL, NULL, key);
-      if (tmp_root != NULL) root = tmp_root;
+      page *tmp_root = find_delete_rebalance(root, NULL, NULL, NULL, NULL, key,
+                                             flush);
+      if (tmp_root != NULL) {
+        root = tmp_root;
+        if (flush) {
+          clflush((char*)root, sizeof(page));
+        }
+      }
+      if(!log.isCommited()) log.commit();
     }
 
     page* find_delete_rebalance(page *p, page *lnbr, page *rnbr, page *llca,
-                                page *rlca, const int64_t &key) {
+                                page *rlca, const int64_t &key,
+                                const int &flush) {
       // p: current node.
       // l(r)nbr: left(right) neighbor node.
       // l(r)lca: left(right) lowest common ancestor.
@@ -1046,12 +1054,14 @@ class btree{
           nrlca = p;
         }
         // recursively find and delete key, and rebalane the tree.
-        dead = find_delete_rebalance(next, nextl, nextr, nllca, nrlca, key);
+        dead = find_delete_rebalance(next, nextl, nextr, nllca, nrlca, key,
+                                     flush);
       } else {
         // p is LEAF
         if (pos >= 0 && pos < p->hdr.cnt) {
           // key found.
-          p->release(pos, 1);
+          log.write((int8_t*)p, sizeof(page));
+          p->release(pos, flush);
           if (p->hdr.cnt == 0) {
             if (udf == p) udf = NULL;
             return p;
@@ -1059,7 +1069,8 @@ class btree{
             int64_t new_key = p->getKey(0);
             int tmp_pos;
             llca->linear_search(p->getAnyKey(), tmp_pos);
-            llca->update_key(tmp_pos, new_key, 1);
+            log.write((int8_t*)llca, sizeof(page));
+            llca->update_key(tmp_pos, new_key, flush);
           }
         } else {
           // key not found.
@@ -1076,20 +1087,26 @@ class btree{
       if (dead != NULL && dead == next) {
         int64_t new_key;
         if (pos == -1) new_key = p->getKey(0);
-        p->release(pos, 1);
+        log.write((int8_t*)p, sizeof(page));
+        p->release(pos, flush);
         if (pos == -1 && llca != NULL) {
           int tmp_pos;
           llca->linear_search(p->getAnyKey(), tmp_pos);
-          llca->update_key(tmp_pos, new_key, 1);
+          log.write((int8_t*)llca, sizeof(page));
+          llca->update_key(tmp_pos, new_key, flush);
         }
+        log.write((int8_t*)dead, sizeof(page));
         delete dead;
       } else if (p->hdr.flag != LEAF) {
         udf = NULL;
       }
 
+      if(!log.isCommited()) log.commit();
+
       if (p == root) {
         if (p->hdr.cnt == 0 && p->hdr.leftmost_ptr != NULL) {
           page *new_root = p->hdr.leftmost_ptr;
+          log.write((int8_t*)root, sizeof(page));
           delete p;
           --height;
           return new_root;
@@ -1102,12 +1119,12 @@ class btree{
         // Nothing to rebalance.
         return NULL;
       } else {
-        return rebalance(p, lnbr, rnbr, llca, rlca);
+        return rebalance(p, lnbr, rnbr, llca, rlca, flush);
       }
     }
 
     page* rebalance(page *p, page *lnbr, page *rnbr, page *llca,
-                    page *rlca) {
+                    page *rlca, const int &flush) {
       if (udf == p) udf = NULL;
       if (lnbr != NULL && lnbr->hdr.cnt > cardinality / 2) {
         // Shift from left to this
@@ -1120,14 +1137,17 @@ class btree{
         int64_t new_key = lnbr->getLastKey();
         int pos;
         llca->linear_search(p->getAnyKey(), pos);
+        log.write((int8_t*)p, sizeof(page));
         if (p->hdr.flag != LEAF) {
           p->store((char*)lnbr->getLastPtr(), llca->getKey(pos),
-                   (char*)p->getLeftMostPtr(), 1);
+                   (char*)p->getLeftMostPtr(), flush);
         } else {
-          p->store(lnbr->getLastKey(), (char*)lnbr->getLastPtr(), 1);
+          p->store(lnbr->getLastKey(), (char*)lnbr->getLastPtr(), flush);
         }
-        lnbr->release(lnbr->hdr.cnt - 1, 1);
-        llca->update_key(pos, new_key, 1);
+        log.write((int8_t*)lnbr, sizeof(page));
+        lnbr->release(lnbr->hdr.cnt - 1, flush);
+        log.write((int8_t*)llca, sizeof(page));
+        llca->update_key(pos, new_key, flush);
         return NULL;
       } else if (rnbr != NULL && rnbr->hdr.cnt > cardinality / 2) {
         // Shift from right to this
@@ -1137,7 +1157,6 @@ class btree{
           exit(1);
         }
 #endif
-        int64_t old_key = rnbr->getFirstKey();
         int64_t new_key;
         if (p->hdr.flag != LEAF) {
           new_key = rnbr->getFirstKey();
@@ -1145,31 +1164,33 @@ class btree{
           new_key = rnbr->getKey(1);
         }
         int pos;
-        rlca->linear_search(old_key, pos);
+        rlca->linear_search(rnbr->getAnyKey(), pos);
+        log.write((int8_t*)p, sizeof(page));
+        log.write((int8_t*)rnbr, sizeof(page));
         if (p->hdr.flag != LEAF) {
           p->store(rlca->getKey(pos),
-                   (char*)rnbr->getLeftMostPtr(), 1);
-          rnbr->release(-1, 1);
+                   (char*)rnbr->getLeftMostPtr(), flush);
+          rnbr->release(-1, flush);
         } else {
-          p->store(rnbr->getFirstKey(), rnbr->getPtr(0), 1);
-          rnbr->release(0, 1);
-        } 
-        rlca->update_key(pos, new_key, 1);
+          p->store(rnbr->getFirstKey(), rnbr->getPtr(0), flush);
+          rnbr->release(0, flush);
+        }
+        log.write((int8_t*)rlca, sizeof(page));
+        rlca->update_key(pos, new_key, flush);
         return NULL;
       } else if (lnbr != NULL && (lnbr->hdr.cnt < cardinality / 2 ||
                  p->hdr.cnt == 0)) {
         // Merge to left.
-        // cout << "Merge to left." << endl;
+        log.write((int8_t*)lnbr, sizeof(page));
         if (p->hdr.flag != LEAF) {
           int pos;
           llca->linear_search(p->getAnyKey(), pos);
           lnbr->store(llca->getKey(pos),
-                      (char*)p->hdr.leftmost_ptr, 1);
+                      (char*)p->hdr.leftmost_ptr, flush);
         }
         for (int i = 0; i < p->hdr.cnt; ++i) {
-          lnbr->store(p->getKey(i), p->getPtr(i), 1);
+          lnbr->store(p->getKey(i), p->getPtr(i), flush);
         }
-        // No need to update left key.
         return p;
       } else if (rnbr != NULL && (rnbr->hdr.cnt < cardinality / 2 ||
                  p->hdr.cnt == 0)) {
@@ -1182,16 +1203,18 @@ class btree{
         }
         int pos;
         rlca->linear_search(rnbr->getAnyKey(), pos);
+        log.write((int8_t*)rnbr, sizeof(page));
         if (p->hdr.flag != LEAF) {
-          rnbr->store((char*)p->hdr.leftmost_ptr,
-                      rlca->getKey(pos),
-                      // rnbr->hdr.leftmost_ptr->getKey(0),
-                      (char*)rnbr->hdr.leftmost_ptr, 1);
+          rnbr->store((char*)p->hdr.leftmost_ptr, rlca->getKey(pos),
+                      (char*)rnbr->hdr.leftmost_ptr, flush);
         }
         for (int i = 0; i < p->hdr.cnt; ++i) {
-          rnbr->store(NULL, p->getKey(i), p->getPtr(i), 1);
+          rnbr->store(NULL, p->getKey(i), p->getPtr(i), flush);
         }
-        if (llca != NULL) rlca->update_key(pos, new_key, 1);
+        if (llca != NULL) {
+          log.write((int8_t*)rlca, sizeof(page));
+          rlca->update_key(pos, new_key, flush);
+        }
         return p;
       }
       return NULL;
@@ -1226,7 +1249,7 @@ class btree{
       int64_t m = 0;
       btree_check(root, ret, m);
       return ret;
-    } 
+    }
 
     void printAll(){
       root->printAll();
@@ -1269,7 +1292,7 @@ int main(int argc,char** argv)
 #ifdef DEBUG
     keys[i] = rand()%10000000;
 #else
-    ifs >> keys[i]; 
+    ifs >> keys[i];
 #endif
   }
 
@@ -1342,7 +1365,7 @@ int main(int argc,char** argv)
   clflush_cnt = 0;
   clock_gettime(CLOCK_MONOTONIC,&start);
   for(int i=0;i<numData;i++){
-    bt.btree_delete(keys[i]);
+    bt.btree_delete(keys[i], 1);
   }
   clock_gettime(CLOCK_MONOTONIC,&end);
 
