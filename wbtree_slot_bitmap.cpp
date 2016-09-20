@@ -830,6 +830,11 @@ class page{
       }
     }
 
+    bool is_sufficient() {
+      return (hdr.cnt > 1);
+      // return (hdr.cnt > cardinality / 2);
+    }
+
     void print()
     {
       if(hdr.flag==LEAF) printf("leaf\n");
@@ -1022,7 +1027,7 @@ class btree{
       // l(r)lca: left(right) lowest common ancestor.
       // key: target key to delete.
 
-      if (p->hdr.cnt > cardinality / 2) {
+      if (p->is_sufficient()) {
         // current node is well utilized.
         udf = NULL;
       } else if (udf == NULL) {
@@ -1123,7 +1128,7 @@ class btree{
     page* rebalance(page *p, page *lnbr, page *rnbr, page *llca,
                     page *rlca, const int &flush) {
       if (udf == p) udf = NULL;
-      if (lnbr != NULL && lnbr->hdr.cnt > cardinality / 2) {
+      if (lnbr != NULL && lnbr->hdr.cnt > 1) {
         // Shift from left to this
 #ifdef DEBUG
         if (llca == NULL) {
@@ -1145,7 +1150,7 @@ class btree{
         log.write((int8_t*)llca, sizeof(page));
         llca->update_key(pos, new_key, flush);
         return NULL;
-      } else if (rnbr != NULL && rnbr->hdr.cnt > cardinality / 2) {
+      } else if (rnbr != NULL && rnbr->hdr.cnt > 1) {
         // Shift from right to this
 #ifdef DEBUG
         if (rlca == NULL) {
@@ -1173,7 +1178,7 @@ class btree{
         log.write((int8_t*)rlca, sizeof(page));
         rlca->update_key(pos, new_key, flush);
         return NULL;
-      } else if (lnbr != NULL && (lnbr->hdr.cnt < cardinality / 2 ||
+      } else if (lnbr != NULL && (!lnbr->is_sufficient() ||
                  p->hdr.cnt == 0)) {
         // Merge to left.
         log.write((int8_t*)lnbr, sizeof(page));
@@ -1187,7 +1192,7 @@ class btree{
           lnbr->store(p->getKey(i), p->getPtr(i), flush);
         }
         return p;
-      } else if (rnbr != NULL && (rnbr->hdr.cnt < cardinality / 2 ||
+      } else if (rnbr != NULL && (!rnbr->is_sufficient() ||
                  p->hdr.cnt == 0)) {
         // Merge to right.
         int64_t new_key;
