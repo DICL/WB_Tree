@@ -10,6 +10,7 @@
 #include <vector>
 #include <string.h>
 #include <cassert>
+// #include <map>
 // #define DEBUG 1
 
 #ifdef DEBUG
@@ -90,8 +91,8 @@ class entry{
     friend class btree;
 };
 
-// const int cardinality = (PAGESIZE-sizeof(header))/ (sizeof(entry)+2);
-const int cardinality = 3;
+const int cardinality = (PAGESIZE-sizeof(header))/ (sizeof(entry)+2);
+// const int cardinality = 3;
 const uint64_t error = 1UL << 57;
 
 class page{
@@ -180,6 +181,31 @@ class page{
     inline int64_t getKey(int i)
     {
       return (records[slot_array[i]]).key;
+    }
+
+    int get_entry_pos(page *target_entry) {
+      if (target_entry == hdr.leftmost_ptr) return -1;
+      for (int i = 0; i < hdr.cnt; ++i) {
+        if (target_entry == (page*)records[slot_array[i]].ptr) {
+          return i;
+        }
+      }
+#ifdef DEBUG
+      cout << "get_entry_pos: not found!!!, debug" << endl;
+      exit(1);
+#endif
+      return hdr.cnt;
+    }
+
+
+    inline int64_t getAnyKey() {
+      if (hdr.cnt > 0) {
+        return records[slot_array[0]].key;
+      } else if (hdr.cnt != LEAF) {
+        return hdr.leftmost_ptr->getAnyKey();
+      } else {
+        cout << "getAnyKey() : no key !!!!!!!!!!!!!!!, debug" << endl;
+      }
     }
 
     inline int64_t getFirstKey() {
@@ -397,7 +423,9 @@ print();
         else{
           //migrate i > hdr.cnt/2 to a rsibling;
           rsibling->hdr.leftmost_ptr = (page*) records[slot_array[m]].ptr;
-          for(int i=m;i<hdr.cnt;i++){
+          uint64_t bit = (1UL << (slot_array[m]+1));
+          bitmap_change += bit;
+          for(int i=m+1;i<hdr.cnt;i++){
             rsibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
             uint64_t bit = (1UL << (slot_array[i]+1));
             bitmap_change += bit;
@@ -425,7 +453,7 @@ print();
 printf("Split done\n");
 printf("Split key=%lld\n", s->split_key);
 printf("LEFT\n");
-lsibling->print();
+// lsibling->print();
 printf("RIGHT\n");
 rsibling->print();
 #endif
@@ -434,34 +462,17 @@ rsibling->print();
       return NULL;
     }
 
-    void update_key_lca(page *lca, const int64_t &old_key, const int64_t &key,
-                        const int &flush) {
-      page *p = lca;
-      page *parent;
-      int pos;
-      while (p) {
-        parent = p;
-        if (p->hdr.flag != LEAF) {
-          p = (page*)parent->linear_search(old_key, pos);
-          if (parent->getKey(pos) == old_key) {
-            parent->update_key(pos, key, flush);
-          }
-        } else {
-          break;
-        }
-      }
-    }
-
-    void update_key(int64_t old_key, int64_t new_key, int flush) {
+    int update_key(int64_t old_key, int64_t new_key, int flush) {
       for (int i = 0; i < hdr.cnt; ++i) {
         if (records[slot_array[i]].key == old_key) {
           update_key(i, new_key, 1);
-          return;
+          return i;
         }
       }
+      return -1;
     }
 
-    int update_key(int pos, int64_t new_key, int flush) {
+    void update_key(int pos, int64_t new_key, int flush) {
       if (pos >= 0 && pos < hdr.cnt) {
         if (bitmap & 1UL != 1UL) {
           // TODO: recovery
@@ -486,7 +497,6 @@ rsibling->print();
         if (flush) {
           clflush((char*)&bitmap, sizeof(int64_t));
         }
-        return pos;
       } else {
 #ifdef DEBUG
         cout << "update: Not found ***, " <<
@@ -494,34 +504,38 @@ rsibling->print();
         print();
         exit(1);
 #endif
-        return -1;
       }
     }
 
-    page* release(page *target, const int &flush) {
+    int release(page *target, const int &flush) {
       if (hdr.leftmost_ptr == target) {
         release(-1, flush);
-        return this;
+        return -1;
       } else {
         for (int i = 0; i < hdr.cnt; ++i) {
           if ((page*)getPtr(i) == target) {
             release(i, flush);
-            return this;
+            return i;
           }
         }
-        return NULL;
+#ifdef DEBUG
+        cout << "Target not found!!!, debug" << endl;
+        exit(1);
+#endif
+        return hdr.cnt;
       }
     }
 
-    page* release(const int64_t &key, const int &flush) {
+    int release(const int64_t &key, const int &flush) {
       int pos = hdr.cnt;
       for (pos = 0; pos < hdr.cnt; ++pos) {
         if (records[slot_array[pos]].key == key) break;
       }
-      return release(pos, flush);
+      release(pos, flush);
+      return pos;
     }
 
-    page* release(const int &pos, const int &flush) {
+    void release(const int &pos, const int &flush) {
       if (pos == -1) {
         page *new_lm = (page*)getPtr(0);
         release(0, 1);
@@ -559,11 +573,12 @@ rsibling->print();
         }
       } else {
         // invalid pos
+#ifdef DEBUG
         cout << "release: Not found ***, " <<
                 ((hdr.flag == LEAF)?"LEAF":"INTERNAL") << endl;
         print();
         exit(1);
-        return NULL;
+#endif
       }
     }
 
@@ -718,7 +733,6 @@ class btree{
     page *udf;
 
   public:
-    int cccc;
     btree(){
       root = new page(LEAF);
       height = 1;
@@ -830,99 +844,88 @@ root->print();
     }
 
     void btree_delete (const int64_t &key) {
-      udf = NULL;
-      page *tmp_root = find_delete_rebalance(root, NULL, NULL, NULL, NULL,
-                                             NULL, key);
+      udf = NULL;  // udf: highest possible underflow point connected from leaf.
+      page *tmp_root = find_delete_rebalance(root, NULL, NULL, NULL, NULL, key);
       if (tmp_root != NULL) root = tmp_root;
     }
 
-    page* find_delete_rebalance(page *p, page *lnbr, page *rnbr, page *parent,
-                                page *llca, page *rlca, const int64_t &key) {
+    page* find_delete_rebalance(page *p, page *lnbr, page *rnbr, page *llca,
+                                page *rlca, const int64_t &key) {
+      // p: current node.
+      // l(r)nbr: left(right) neighbor node.
+      // l(r)lca: left(right) lowest common ancestor.
+      // key: target key to delete.
+
       if (p->hdr.cnt > cardinality / 2) {
+        // current node is well utilized.
         udf = NULL;
       } else if (udf == NULL) {
-        // possible lowest underflow point
+        // current node can underflow in the future.
+        // store the highest consecutive node from leaf.
         udf = p;
       }
 
-      int pos = -1;
-      page *nextl, *nextr;
-      page *nllca, *nrlca;
-      page *dead = NULL;
+      int pos;
+      page *nextl, *nextr;  // next left(right) neighbor.
+      page *nllca, *nrlca;  // next left(right) lowest common ancestor.
+      page *dead = NULL;  // node to be deleted.
       page *next = (page*)p->linear_search(key, pos);
       if (p->hdr.flag != LEAF) {
-        if (next == p->getLeftMostPtr()) {
+        // current node is INTERNAL node.
+        if (pos == -1) {
+          // next node is leftmost node of current node.
           nextl = (lnbr != NULL)?lnbr->getLastPtr():NULL;
           nllca = llca;
         } else {
           nextl = p->getLeftPtr(pos, lnbr);
           nllca = p;
         }
-        if (next == p->getLastPtr()) {
+        if (pos == p->hdr.cnt - 1) {
+          // next node is rightmost node of current node.
           nextr = (rnbr != NULL)?rnbr->getLeftMostPtr():NULL;
           nrlca = rlca;
         } else {
           nextr = p->getRightPtr(pos, rnbr);
           nrlca = p;
         }
-        dead = find_delete_rebalance(next, nextl, nextr, p, nllca, nrlca, key);
+        // recursively find and delete key, and rebalane the tree.
+        dead = find_delete_rebalance(next, nextl, nextr, nllca, nrlca, key);
       } else {
         // p is LEAF
         if (pos >= 0 && pos < p->hdr.cnt) {
           // key found.
-          int64_t old_key = p->getKey(pos);
           p->release(pos, 1);
-          ++cccc;
-          // if (pos == 0 && p->hdr.cnt > 0 && parent != NULL) {
-          //   int ppos;
-          //   parent->linear_search(p->getKey(0), ppos);
-          //   parent->update_key(ppos, p->getKey(0), 1);
-          // }
-          if (pos == 0) {
-            int64_t new_key;
-            bool noupdate = false;
-            if (p->hdr.cnt > 0) {
-              new_key = p->getKey(0);
-            } else if (rnbr != NULL) {
-              new_key = rnbr->getKey(0);
-            } else {
-              noupdate = true;
-            }
-            if (llca != NULL && !noupdate) {
-              llca->update_key(old_key, new_key, 1);
-            }
+          if (p->hdr.cnt == 0) {
+            if (udf == p) udf = NULL;
+            return p;
+          } else if (pos == 0 && llca != NULL) {
+            int64_t new_key = p->getKey(0);
+            int tmp_pos;
+            llca->linear_search(p->getAnyKey(), tmp_pos);
+            llca->update_key(tmp_pos, new_key, 1);
           }
         } else {
           // key not found.
           // Nothing is deleted. Nothing to rebalance.
+#ifdef DEBUG
           cout << "*********** key not found." << endl;
+          exit(1);
+#endif
           udf = NULL;
           return NULL;
         }
       }
 
       if (dead != NULL && dead == next) {
-        int64_t old_key;
         int64_t new_key;
-        if (pos == -1) {
-          new_key = p->getKey(0);
+        if (pos == -1) new_key = p->getKey(0);
+        p->release(pos, 1);
+        if (pos == -1 && llca != NULL) {
+          int tmp_pos;
+          llca->linear_search(p->getAnyKey(), tmp_pos);
+          llca->update_key(tmp_pos, new_key, 1);
         }
-        cout << "Delete from INTERNAL, pos = " << pos << endl;
-        if (p->release(dead, 1) == p) {
-          if (pos == -1) {
-            cout << "New key is : " << new_key << endl;
-            // update_key(root, p, old_key, p->getKey(0), 1);
-            if (llca != NULL) {
-              int ppos;
-              llca->linear_search(p->getKey(0), ppos);
-              llca->update_key(ppos, new_key, 1);
-            }
-          }
-          // delete dead;
-        } else {
-          cout << "nothing to delete, debug" << endl;
-          exit(1);
-        }
+        delete dead;
       } else if (p->hdr.flag != LEAF) {
         udf = NULL;
       }
@@ -930,7 +933,7 @@ root->print();
       if (p == root) {
         if (p->hdr.cnt == 0 && p->hdr.leftmost_ptr != NULL) {
           page *new_root = p->hdr.leftmost_ptr;
-          // delete p;
+          delete p;
           --height;
           return new_root;
         } else {
@@ -942,43 +945,41 @@ root->print();
         // Nothing to rebalance.
         return NULL;
       } else {
-        return rebalance(p, lnbr, rnbr, parent, llca, rlca);
+        return rebalance(p, lnbr, rnbr, llca, rlca);
       }
     }
 
-    page* rebalance(page *p, page *lnbr, page *rnbr, page *parent, page *llca,
+    page* rebalance(page *p, page *lnbr, page *rnbr, page *llca,
                     page *rlca) {
       if (udf == p) udf = NULL;
       if (lnbr != NULL && lnbr->hdr.cnt > cardinality / 2) {
         // Shift from left to this
-        cout << "Shift from left." << endl;
+#ifdef DEBUG
         if (llca == NULL) {
           cout << "llca NULL, debug" << endl;
           exit(1);
         }
-        int64_t old_key = p->getFirstKey();
+#endif
         int64_t new_key = lnbr->getLastKey();
         int pos;
-        llca->linear_search(old_key, pos);
+        llca->linear_search(p->getAnyKey(), pos);
         if (p->hdr.flag != LEAF) {
-          p->store((char*)lnbr->getLastPtr(),
-                   p->getLeftMostPtr()->getFirstKey(),
+          p->store((char*)lnbr->getLastPtr(), llca->getKey(pos),
                    (char*)p->getLeftMostPtr(), 1);
         } else {
           p->store(lnbr->getLastKey(), (char*)lnbr->getLastPtr(), 1);
         }
         lnbr->release(lnbr->hdr.cnt - 1, 1);
         llca->update_key(pos, new_key, 1);
-        // update_key(root, p, old_key, p->getKey(0), 1);
-        // p->update_key_lca(llca, old_key, p->getKey(0), 1);
         return NULL;
       } else if (rnbr != NULL && rnbr->hdr.cnt > cardinality / 2) {
         // Shift from right to this
-        cout << "Shift from right." << endl;
+#ifdef DEBUG
         if (rlca == NULL) {
           cout << "rlca NULL, debug" << endl;
           exit(1);
         }
+#endif
         int64_t old_key = rnbr->getFirstKey();
         int64_t new_key;
         if (p->hdr.flag != LEAF) {
@@ -997,86 +998,46 @@ root->print();
           rnbr->release(0, 1);
         } 
         rlca->update_key(pos, new_key, 1);
-        // update_key(root, rnbr, old_key, rnbr->getKey(0), 1);
-        // p->update_key_lca(rlca, old_key, p->getKey(0), 1);
         return NULL;
       } else if (lnbr != NULL && (lnbr->hdr.cnt < cardinality / 2 ||
                  p->hdr.cnt == 0)) {
         // Merge to left.
-        cout << "Merge to left." << endl;
-        for (int i = 0; i < p->hdr.cnt; ++i) {
-          lnbr->store(p->getKey(i), p->getPtr(i), 1);
-        }
+        // cout << "Merge to left." << endl;
         if (p->hdr.flag != LEAF) {
           int pos;
-          llca->linear_search(p->getKey(0), pos);
+          llca->linear_search(p->getAnyKey(), pos);
           lnbr->store(llca->getKey(pos),
                       (char*)p->hdr.leftmost_ptr, 1);
+        }
+        for (int i = 0; i < p->hdr.cnt; ++i) {
+          lnbr->store(p->getKey(i), p->getPtr(i), 1);
         }
         // No need to update left key.
         return p;
       } else if (rnbr != NULL && (rnbr->hdr.cnt < cardinality / 2 ||
                  p->hdr.cnt == 0)) {
         // Merge to right.
-        cout << "Merge to right." << endl;
-        int64_t old_key = rnbr->getKey(0);
+        int64_t new_key;
+        if (llca != NULL) {
+          int tmp_pos;
+          llca->linear_search(p->getAnyKey(), tmp_pos);
+          new_key = llca->getKey(tmp_pos);
+        }
         int pos;
-        parent->linear_search(p->getKey(0), pos);
-        int64_t new_key = parent->getKey(pos);
-        rlca->linear_search(rnbr->getKey(0), pos);
+        rlca->linear_search(rnbr->getAnyKey(), pos);
         if (p->hdr.flag != LEAF) {
           rnbr->store((char*)p->hdr.leftmost_ptr,
-                      rnbr->hdr.leftmost_ptr->getKey(0),
+                      rlca->getKey(pos),
+                      // rnbr->hdr.leftmost_ptr->getKey(0),
                       (char*)rnbr->hdr.leftmost_ptr, 1);
         }
         for (int i = 0; i < p->hdr.cnt; ++i) {
           rnbr->store(NULL, p->getKey(i), p->getPtr(i), 1);
         }
-        rlca->update_key(pos, new_key, 1);
-        // update_key(root, rnbr, old_key, rnbr->getKey(0), 1);
+        if (llca != NULL) rlca->update_key(pos, new_key, 1);
         return p;
       }
       return NULL;
-    }
-
-    void update_key(page *p, page *bottom, int64_t key, int64_t new_key,
-                    int flush) {
-      if (p == NULL) return;
-      if (p->hdr.flag == LEAF) return;
-      if (p == bottom) return;
-
-      if (key < p->getKey(0)) {
-        page *next = p->hdr.leftmost_ptr;
-        update_key(next, bottom, key, new_key, flush);
-      } else {
-        int pos = p->hdr.cnt;
-        for (pos = 1; pos < p->hdr.cnt; ++pos) {
-          if (key < p->getKey(pos)) {
-            --pos;
-            break;
-          }
-        }
-        if (pos == p->hdr.cnt) pos = p->hdr.cnt - 1;
-        page *next = (page*)p->getPtr(pos);
-        update_key(next, bottom, key, new_key, flush);
-        if (p->getKey(pos) == key) {
-          cout << "Key Update: " << p->getKey(pos) << " --> " <<
-                  new_key << endl;
-          p->records[pos].key = new_key;
-        }
-      }
-    }
-
-    int64_t rearr_key(page *p) {
-      if (p->hdr.flag != LEAF) {
-        for (int i = 0; i < p->hdr.cnt; ++i) {
-          int64_t ret = rearr_key((page*)p->getPtr(i));
-          if (ret != p->getKey(i)) {
-            p->update_key(i, ret, 1);
-          }
-        }
-      }
-      return p->getKey(0);
     }
 
     int64_t btree_check(page *p, bool &is_valid) {
@@ -1110,6 +1071,10 @@ root->print();
       root->printAll();
     }
 
+    int get_height() {
+      return height;
+    }
+
 };
 
 int main(int argc,char** argv)
@@ -1133,13 +1098,25 @@ int main(int argc,char** argv)
   values= new unsigned long[(sizeof(unsigned long)*numData)];
 
   ifstream ifs;
-  ifs.open("../input_small.txt");
+  ifs.open("../input_1b.txt");
+  // ifs.open("../input_small.txt");
 
   assert(ifs);
 
+#ifdef DEBUG
+  srand(time(NULL));
+  map<int64_t, bool> maaap;
+#endif
   for(int i=0; i<numData; i++){
 #ifdef DEBUG
-    keys[i] = rand()%1000;
+    int64_t rv = rand()%100000;
+    if (maaap.find(rv) == maaap.end()) {
+      keys[i] = rv;
+    } else {
+      --i;
+      continue;
+    }
+    // keys[i] = rand()%1000;
 #else
     ifs >> keys[i]; 
 #endif
@@ -1164,7 +1141,12 @@ printf("inserting %lld\n", keys[i]);
   cout<<"INSERTION"<<endl;
   cout<<"elapsedTime : "<<elapsedTime/1000<<endl;
   cout<<"clflush_cnt : "<<clflush_cnt<<endl;
-  bt.printAll();
+#ifdef DEBUG
+  if (!bt.btree_ck()) {
+    cout << "btree invalid, debug" << endl;
+    exit(1);
+  }
+#endif
 
   char *garbage = new char[256*1024*1024];
   for(int i=0;i<256*1024*1024;i++){
@@ -1194,18 +1176,12 @@ printf("inserting %lld\n", keys[i]);
   cout<<"LINEAR SEARCH"<<endl;
   cout<<"elapsedTime : "<<elapsedTime/1000 << "usec" <<endl;
 
-  if (!bt.btree_ck()) return 0;
-
 
   clflush_cnt = 0;
   clock_gettime(CLOCK_MONOTONIC,&start);
-  bt.cccc = 0;
   for(int i=0;i<numData;i++){
     bt.btree_delete(keys[i]);
-    cout << "========" << "After delete " << keys[i] << "==============" << endl;
-    bt.printAll();
   }
-  cout << bt.cccc << endl;
   clock_gettime(CLOCK_MONOTONIC,&end);
 
   elapsedTime = (end.tv_sec-start.tv_sec)*1000000000 + (end.tv_nsec-start.tv_nsec);
