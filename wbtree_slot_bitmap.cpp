@@ -1005,6 +1005,7 @@ class btree{
       page *tmp_root = find_delete_rebalance(root, NULL, NULL, NULL, NULL, key,
                                              flush);
       if (tmp_root != NULL) {
+        --height;
         root = tmp_root;
         if (flush) {
           clflush((char*)root, sizeof(page));
@@ -1095,20 +1096,16 @@ class btree{
           log.write((int8_t*)llca, sizeof(page));
           llca->update_key(tmp_pos, new_key, flush);
         }
-        log.write((int8_t*)dead, sizeof(page));
         delete dead;
       } else if (p->hdr.flag != LEAF) {
         udf = NULL;
       }
-
-      if(!log.isCommited()) log.commit();
 
       if (p == root) {
         if (p->hdr.cnt == 0 && p->hdr.leftmost_ptr != NULL) {
           page *new_root = p->hdr.leftmost_ptr;
           log.write((int8_t*)root, sizeof(page));
           delete p;
-          --height;
           return new_root;
         } else {
           return p;
@@ -1137,7 +1134,6 @@ class btree{
         int64_t new_key = lnbr->getLastKey();
         int pos;
         llca->linear_search(p->getAnyKey(), pos);
-        log.write((int8_t*)p, sizeof(page));
         if (p->hdr.flag != LEAF) {
           p->store((char*)lnbr->getLastPtr(), llca->getKey(pos),
                    (char*)p->getLeftMostPtr(), flush);
@@ -1165,7 +1161,6 @@ class btree{
         }
         int pos;
         rlca->linear_search(rnbr->getAnyKey(), pos);
-        log.write((int8_t*)p, sizeof(page));
         log.write((int8_t*)rnbr, sizeof(page));
         if (p->hdr.flag != LEAF) {
           p->store(rlca->getKey(pos),
