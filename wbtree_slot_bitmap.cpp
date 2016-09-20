@@ -29,6 +29,8 @@
 #define LEAF 1
 #define INTERNAL 0
 
+#define CPU_FREQ_MHZ (1994) //Wook : R930 MAX cpu freq
+#define DELAY_IN_NS (1000)  // Wook : Pcoomit latency in ns (now 1us)
 
 using namespace std;
 
@@ -40,22 +42,42 @@ inline void mfence()
 }
 
 int clflush_cnt = 0;
+unsigned long write_latency_in_ns = 0;
 
-inline void clflush(char *data, int len)
+static inline void cpu_pause()
 {
-  volatile char *ptr = (char *)((unsigned long)data &~(CACHE_LINE_SIZE-1));
+  __asm__ volatile ("pause" ::: "memory");
+}
 
+static inline unsigned long read_tsc(void)
+{
+  unsigned long var;
+  unsigned int hi, lo;
+
+  asm volatile ("rdtsc" : "=a" (lo), "=d" (hi));
+  var = ((unsigned long long int) hi << 32) | lo;
+
+  return var;
+}
+
+static inline void pm_wbarrier(unsigned long lat)
+{
+  unsigned long etsc = read_tsc() + (unsigned long)(lat*CPU_FREQ_MHZ/1000);
+  while (read_tsc() < etsc)
+    cpu_pause();
+}
+
+inline void clflush(char *data, int len) {
+  volatile char *ptr = (char *)((unsigned long)data &~(CACHE_LINE_SIZE-1));
   mfence();
-  for(; ptr<data+len; ptr+=CACHE_LINE_SIZE){
-    //printf("clflush ptr: %x\n", ptr);
-  unsigned long etsc = read_tsc() + (unsigned long)(write_latency_in_ns*CPU_FREQ_MHZ/1000);
+  for (; ptr<data+len; ptr+=CACHE_LINE_SIZE) {
+    unsigned long etsc = read_tsc() + (unsigned long)(write_latency_in_ns*CPU_FREQ_MHZ/1000);
     asm volatile("clflush %0" : "+m" (*(volatile char *)ptr));
-  while (read_tsc() < etsc) cpu_pause();
+    while (read_tsc() < etsc)
+      cpu_pause();
     clflush_cnt++;
-    //printf("clflush cnt: %d\n", clflush_cnt);
   }
   mfence();
-
 }
 
 class btree_log_header {
@@ -71,11 +93,11 @@ class btree_log_header {
 
     btree_log_header(const btree_log_header& h) 
       : pgid(h.pgid), txid(h.txid), commited(0) { 
-      if (h.commited == 1) {
-        // because vector can double its array
-        commit();
+        if (h.commited == 1) {
+          // because vector can double its array
+          commit();
+        }
       }
-    }
 
     void setId(uint64_t id) {
       pgid = id;
@@ -129,9 +151,9 @@ class btree_log {
   public:
     btree_log(uint64_t cap) 
       : capacity(cap), size(0), prev_size(0), txid(0), last_idx(0) {
-      log_pg = (int8_t*)malloc(capacity);
-    }
-    
+        log_pg = (int8_t*)malloc(capacity);
+      }
+
     btree_log () 
       : capacity(0), size(0), prev_size(0), txid(0), log_pg(NULL), last_idx(0) { }
 
@@ -145,12 +167,12 @@ class btree_log {
     }
 
     void write(int8_t* ptr, uint64_t s) {
-     assert ( size + s < capacity );
-     header.setId((uint64_t)ptr);
-     header.setTxid(txid);
-     log_header.push_back(header);
-     memcpy(log_pg + size, ptr, s);
-     size += s;
+      assert ( size + s < capacity );
+      header.setId((uint64_t)ptr);
+      header.setTxid(txid);
+      log_header.push_back(header);
+      memcpy(log_pg + size, ptr, s);
+      size += s;
     }
 
     void commit() {
@@ -330,7 +352,7 @@ class page{
         cerr << "bitmap error: recovery is required." << endl;
         bitmap += 1; 
         if(flush)
-          clflush((char*) &bitmap, 1);
+          clflush((char*) &bitmap, 8);
       }
       if( hdr.cnt < cardinality ){
         // have space
@@ -447,7 +469,9 @@ class page{
         else{
           //migrate i > hdr.cnt/2 to a rsibling;
           rsibling->hdr.leftmost_ptr = (page*) records[slot_array[m]].ptr;
-          for(int i=m;i<hdr.cnt;i++){
+          uint64_t bit = (1UL << (slot_array[m]+1));
+          bitmap_change += bit;
+          for(int i=m+1;i<hdr.cnt;i++){
             rsibling->store(records[slot_array[i]].key, records[slot_array[i]].ptr, 0);
             uint64_t bit = (1UL << (slot_array[i]+1));
             bitmap_change += bit;
@@ -462,8 +486,8 @@ class page{
         hdr.sibling_ptr = rsibling;
 
         if(flush){
+          clflush((char*) rsibling, sizeof(page)-sizeof(entry)*(cardinality-m));
           clflush((char*) this, sizeof(page));
-          clflush((char*) rsibling, sizeof(page));
         }
         // split is done.. now let's insert a new entry
 
@@ -681,10 +705,10 @@ class btree{
         if(s!=NULL){
           // split occurred
           // logging needed
-//          page *logPage = new page[2];
-//          memcpy(logPage, s->left, sizeof(page));
-//          memcpy(logPage+1, s->right, sizeof(page));
-//          clflush((char*) logPage, 2*sizeof(page));
+          //          page *logPage = new page[2];
+          //          memcpy(logPage, s->left, sizeof(page));
+          //          memcpy(logPage+1, s->right, sizeof(page));
+          //          clflush((char*) logPage, 2*sizeof(page));
           log.write((int8_t*)s->left, sizeof(page));
           // we need log frame header, but let's just skip it for now... need to fix it for later..
 
@@ -692,7 +716,7 @@ class btree{
           //p = (page*) path.back();
           //path.pop_back();
           p = (page*) path[--top];
-          //if(path.empty()){
+          //if(path.empty())
           if ( top == 0 ) {
             // tree height grows here
             page* new_root = new page(s->left, s->split_key, s->right);
@@ -727,23 +751,36 @@ class btree{
       }
     }
 
-      bool btree_check(page *p) {
-        if (p->hdr.flag == LEAF) {
-          return true;
-        }
-        for (int i = 0; i < p->hdr.cnt; ++i) {
-          if (((page*)p->getPtr(i))->getKey(0) != p->getKey(i)) {
-            cout << "parent " << i << "th " << "key= " << p->getKey(i) << endl;
-            cout << "child first key= " << ((page*)p->getPtr(i))->getKey(0) << endl;
-            return false;
-          }
-          return btree_check((page*)p->getPtr(i));
+    int64_t btree_check(page *p, bool &is_valid, int64_t &max) {
+      int64_t m = 0;
+      if (p->hdr.flag == LEAF) {
+        max = p->getKey(p->hdr.cnt-1);
+        return p->getKey(0);
+      }
+      for (int i = 0; i < p->hdr.cnt; ++i) {
+        int64_t ret = btree_check((page*)p->getPtr(i), is_valid, m);
+        if (!is_valid) return 0;
+        if (ret != p->getKey(i)) {
+          is_valid = false;
+          return 0;
         }
       }
+      max = m;
+      int64_t min = btree_check(p->hdr.leftmost_ptr, is_valid, m);
+      if (!is_valid) return 0;
+      if (p->hdr.cnt > 0 && !(m < p->getKey(0))) {
+        is_valid = false;
+        return 0;
+      }
+      return min;
+    }
 
-      bool btree_ck() {
-        return btree_check(root);
-      }
+    bool btree_ck() {
+      bool ret = true;
+      int64_t m = 0;
+      btree_check(root, ret, m);
+      return ret;
+    } 
 
     void printAll(){
       root->printAll();
@@ -759,10 +796,11 @@ int main(int argc,char** argv)
   //    printf("sizeof(page)=%lu\n", sizeof(page));
 
   if(argc<3) {
-    printf("Usage: %s NDATA Latency\n", argv[0]);
+    printf("Usage: %s NUMDATA WRITE_LATENCY\n", argv[0]);
   }
   int numData =atoi(argv[1]);
-  write_latency_in_ns= atol(argv[2]);
+  write_latency_in_ns=atol(argv[2]);
+
 
   assert(cardinality < 64);
 
@@ -799,8 +837,6 @@ int main(int argc,char** argv)
   }
   clock_gettime(CLOCK_MONOTONIC,&end);
 
-  bt.btree_ck();
-
   long long elapsedTime = (end.tv_sec-start.tv_sec)*1000000000 + (end.tv_nsec-start.tv_nsec);
   cout<<"INSERTION"<<endl;
   cout<<"elapsedTime : "<<elapsedTime/1000<<endl;
@@ -813,6 +849,8 @@ int main(int argc,char** argv)
   for(int i=100;i<256*1024*1024;i++){
     garbage[i] += garbage[i-100];
   }
+
+  assert(bt.btree_ck());
 
   clock_gettime(CLOCK_MONOTONIC,&start);
   for(int i=0;i<numData;i++){
