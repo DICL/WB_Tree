@@ -275,6 +275,19 @@ class page{
       store((char*) left, key, (char*) right, 1);
     }
 
+    page(page* left, int64_t key, page* right, int flush) // this is called when tree grows
+    {
+      bitmap=1;
+      hdr.cnt=0;
+      hdr.flag=INTERNAL;
+      hdr.fragmented_bytes=0;
+      hdr.leftmost_ptr = left;
+      hdr.split_key = 0;
+      hdr.sibling_ptr = NULL;
+
+      store((char*) left, key, (char*) right, flush);
+    }
+
     char avail_offsets[cardinality];
 
     inline uint8_t nextSlotOff()
@@ -295,6 +308,23 @@ class page{
       }
 
       printf("not enough space: This should not happen\n");
+    }
+
+    void storeBulk(page* src, const int &begin, const int &end, page* parent) {
+      int pos = begin;
+      if (src->hdr.flag == LEAF && begin == -1) {
+        ++pos;
+      }
+      for (int i = pos; i < end; ++i) {
+        if (i == -1) {
+          int tmp_pos;
+          parent->linear_search(src->getAnyKey(), tmp_pos);
+          int64_t tmpKey = parent->getKey(tmp_pos);
+          store(NULL, tmpKey, src->hdr.leftmost_ptr, 0);
+        } else {
+          store(NULL, src->getKey(i), src->getPtr(i), 0);
+        }
+      }
     }
 
     inline uint8_t nextSlotOff2()
@@ -344,7 +374,7 @@ class page{
     inline int64_t getAnyKey() {
       if (hdr.cnt > 0) {
         return records[slot_array[0]].key;
-      } else if (hdr.cnt != LEAF) {
+      } else if (hdr.flag != LEAF) {
         return hdr.leftmost_ptr->getAnyKey();
       } else {
         cout << "getAnyKey() : no key !!!!!!!!!!!!!!!, debug" << endl;
@@ -603,6 +633,59 @@ class page{
         return s;
       }
       return NULL;
+    }
+
+    void replace(char* leftPtr, int64_t key, char* rightPtr, int flush) {
+      int pos = hdr.cnt;
+      char* &leftChild;
+      char* &rightChild;
+      if (hdr.cnt < 2) {
+        pos = 0;
+        leftChild = hdr.leftmost_ptr;
+        rightChild = getPtr(0);
+      } else if (key < getKey(1)) {
+        pos = 0;
+        leftChild = hdr.leftmost_ptr;
+        rightChild = getPtr(0);
+      } else if (getKey(hdr.cnt - 2) < key) {
+        pos = hdr.cnt - 1;
+        leftChild = getPtr(hdr.cnt - 2);
+        rightChild = getPtr(pos);
+      } else {
+        for (int i = 1; i < hdr.cnt - 1; ++i) {
+          if (getKey(i - 1) < key && key < getKey(i + 1)) {
+            pos = i;
+            leftChild = getPtr(i - 1);
+            rightChild = getPtr(i + 1);
+            break;
+          }
+        }
+      }
+
+      if (pos == hdr.cnt) return;
+
+      if (bitmap & 1UL != 1UL) {
+        // TODO: recovery
+        bitmap |= 1UL;
+        if (flush) {
+          clflush((char*)&bitmap, sizeof(uint64_t));
+        }
+      }
+      // invalidate the page.
+      bitmap &= 0xFFFFFFFFFFFFFFFE;
+      if (flush) {
+        clflush((char*)&bitmap, sizeof(uint64_t));
+      }
+      leftChild = leftPtr;
+      rightChild = rightPtr;
+      if (flush) {
+        clflush((char*)this, sizeof(page));
+      }
+      // validate the page
+      bitmap |= 1UL;
+      if (flush) {
+        clflush((char*)&bitmap, sizeof(uint64_t));
+      }
     }
 
     int update_key(int64_t old_key, int64_t new_key, int flush) {
@@ -1005,6 +1088,7 @@ class btree{
       }
     }
 
+
     void btree_delete (const int64_t &key, const int &flush) {
       udf = NULL;  // udf: highest possible underflow point connected from leaf.
       page *tmp_root = find_delete_rebalance(root, NULL, NULL, NULL, NULL, key,
@@ -1123,6 +1207,176 @@ class btree{
       } else {
         return rebalance(p, lnbr, rnbr, llca, rlca, flush);
       }
+    }
+
+    page* rebalanceCommonParentOnly(page* p, page* lnbr, page* rnbr,
+                                    page* parent, const int &flush) {
+      if (udf == p) udf = NULL;
+      if (lnbr != NULL && lnbr->is_sufficient()) {
+        // Shift from left to this
+#ifdef DEBUG
+        if (llca == NULL) {
+          cout << "llca NULL, debug" << endl;
+          exit(1);
+        }
+#endif
+        int numShift = floor((lnbr->hdr.cnt + p->hdr.cnt) / 2) - p->hdr.cnt;
+        shiftEntries(lnbr, p, parent, numShift, 1);
+
+
+
+
+        int64_t new_key = lnbr->getLastKey();
+        int pos;
+        llca->linear_search(p->getAnyKey(), pos);
+        if (p->hdr.flag != LEAF) {
+          p->store((char*)lnbr->getLastPtr(), llca->getKey(pos),
+                   (char*)p->getLeftMostPtr(), flush);
+        } else {
+          p->store(lnbr->getLastKey(), (char*)lnbr->getLastPtr(), flush);
+        }
+        log.write((int8_t*)lnbr, sizeof(page));
+        lnbr->release(lnbr->hdr.cnt - 1, flush);
+        log.write((int8_t*)llca, sizeof(page));
+        llca->update_key(pos, new_key, flush);
+        return NULL;
+      } else if (rnbr != NULL && rnbr->hdr.cnt > 1) {
+        // Shift from right to this
+#ifdef DEBUG
+        if (rlca == NULL) {
+          cout << "rlca NULL, debug" << endl;
+          exit(1);
+        }
+#endif
+        int64_t new_key;
+        if (p->hdr.flag != LEAF) {
+          new_key = rnbr->getFirstKey();
+        } else {
+          new_key = rnbr->getKey(1);
+        }
+        int pos;
+        rlca->linear_search(rnbr->getAnyKey(), pos);
+        log.write((int8_t*)rnbr, sizeof(page));
+        if (p->hdr.flag != LEAF) {
+          p->store(rlca->getKey(pos),
+                   (char*)rnbr->getLeftMostPtr(), flush);
+          rnbr->release(-1, flush);
+        } else {
+          p->store(rnbr->getFirstKey(), rnbr->getPtr(0), flush);
+          rnbr->release(0, flush);
+        }
+        log.write((int8_t*)rlca, sizeof(page));
+        rlca->update_key(pos, new_key, flush);
+        return NULL;
+      } else if (lnbr != NULL && (!lnbr->is_sufficient() ||
+                 p->hdr.cnt == 0)) {
+        // Merge to left.
+        log.write((int8_t*)lnbr, sizeof(page));
+        if (p->hdr.flag != LEAF) {
+          int pos;
+          llca->linear_search(p->getAnyKey(), pos);
+          lnbr->store(llca->getKey(pos),
+                      (char*)p->hdr.leftmost_ptr, flush);
+        }
+        for (int i = 0; i < p->hdr.cnt; ++i) {
+          lnbr->store(p->getKey(i), p->getPtr(i), flush);
+        }
+        return p;
+      } else if (rnbr != NULL && (!rnbr->is_sufficient() ||
+                 p->hdr.cnt == 0)) {
+        // Merge to right.
+        int64_t new_key;
+        if (llca != NULL) {
+          int tmp_pos;
+          llca->linear_search(p->getAnyKey(), tmp_pos);
+          new_key = llca->getKey(tmp_pos);
+        }
+        int pos;
+        rlca->linear_search(rnbr->getAnyKey(), pos);
+        log.write((int8_t*)rnbr, sizeof(page));
+        if (p->hdr.flag != LEAF) {
+          rnbr->store((char*)p->hdr.leftmost_ptr, rlca->getKey(pos),
+                      (char*)rnbr->hdr.leftmost_ptr, flush);
+        }
+        for (int i = 0; i < p->hdr.cnt; ++i) {
+          rnbr->store(NULL, p->getKey(i), p->getPtr(i), flush);
+        }
+        if (llca != NULL) {
+          log.write((int8_t*)rlca, sizeof(page));
+          rlca->update_key(pos, new_key, flush);
+        }
+        return p;
+      }
+    }
+
+    page* shiftEntries(page* left, page* right, page* parent,
+                       const int &numShift, const int &fromLeft) {
+      page* sLeft;
+      page* sRight;
+      int64_t newKey;
+      if (fromLeft) {
+        // Shift from left to right
+        sLeft = new page(left->leftmost_ptr, left->getKey(0),
+                         left->getPtr(0), 0);
+        int basePos = left->hdr.cnt - numShift;
+        int pos = basePos;
+        if (hdr.flag != LEAF) {
+          if (numShift > 2) {
+            newKey = left->getKey(basePos);
+            sRight = new page(left->getPtr(basePos),
+              left->getKey(basePos + 1), left->getPtr(basePos + 1), 0);
+            pos += 2;
+          } else {
+            cout << "NO!!!!!!!!!!!";
+            exit(1);
+          }
+        } else {
+          // LEAF
+          sRight = new page(NULL, left->getKey(basePos),
+                            left->getPtr(basePos), 0);
+          ++pos;
+        }
+        sLeft->storeBulk(left, 1, basePos, parent);
+        sLeft->hdr.sibling_ptr = sRight;
+        clflush((char*)sLeft, sizeof(page));
+
+        sRight->storeBulk(left, pos, left->hdr.cnt, parent);
+        sRight->storeBulk(right, -1, right->hdr.cnt, parent);
+        clflush((char*)sRight, sizeof(page));
+
+        parent->store(sLeft, newKey, sRight, 1);
+      } else {
+        // Shift from right to left
+        sLeft = new page(left->leftmost_ptr, left->getKey(0),
+                         left->getPtr(0), 0);
+        int basePos = (hdr.flag != LEAF)?numShift - 1:numShift;
+        itn pos = basePos;
+        if (hdr.flag != LEAF) {
+          if (basePos + 1 < right->hdr.cnt) {
+            newKey = right->getKey(basePos);
+            sRight = new page(right->getPtr(basePos),
+                right->getKey(basePos + 1), right->getPtr(basePos + 1), 0);
+            pos += 2;
+          } else {
+            cout << "NO!!!!!!!!!!!!!!!!!";
+          }
+        } else {
+          sRight = new page(NULL, right->getKey(basePos),
+              right->getPtr(basePos), 0);
+          ++pos;
+        }
+        sLeft->storeBulk(left, 1, left->hdr.cnt, parent);
+        sLeft->storeBulk(right, -1, basePos, parent);
+        sLeft->hdr.sibling_ptr = sRight;
+        clflush((char*)sLeft, sizeof(page));
+
+        sRight->storeBulk(right, pos, right->hdr.cnt, parent);
+        clflush((char*)sRight, sizeof(page));
+
+        parent->store(sLeft, newKey, sRight, 1);
+      }
+      sLeft->hdr.sibling_ptr = NULL;
+      clflush((char*)sLeft->hdr, sizeof(header));
     }
 
     page* rebalance(page *p, page *lnbr, page *rnbr, page *llca,
