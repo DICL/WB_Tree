@@ -199,6 +199,24 @@ class btree_log {
 
 class page;
 
+class three_pages {
+ public:
+   page* l;  // left neighbor
+   page* p;  // current node
+   page* r;  // right neighbor
+   three_pages() {
+     l = NULL;
+     p = NULL;
+     r = NULL;
+   }
+   three_pages(page* left_neighbor, page* cur, page* right_neighbor) {
+     l = left_neighbor;
+     p = cur;
+     r = right_neighbor;
+   }
+   friend class page;
+};
+
 class split_info{
   public:
     page* left;
@@ -397,7 +415,7 @@ class page{
     inline page* getLeftPtr(int i) {
       if (i > 0) {
         return (page*)records[slot_array[i - 1]].ptr;
-      } else if (i == 0) {
+      } else if (hdr.flag != LEAF && i == 0) {
         return hdr.leftmost_ptr;
       } else {
         return NULL;
@@ -1087,6 +1105,80 @@ class btree{
         log.commit();
       }
     }
+
+    inline merge_info* delete_entry(page* l, int64_t key, page* r) {
+      int pos;
+      if (linear_search(key, pos)) {
+        return delete_entry(l, key, r, pos);
+      }
+      return NULL;
+    }
+
+
+    merge_info* delete_entry(page* l, int64_t key, page* r, int pos) {
+      if (!is_sufficient()) {
+
+          // merge
+          // shift
+      } else {
+        if (hdr.flag == LEAF && pos == 0) {
+          // key update
+          release(pos, 1);
+          merge_info* m = new merge_info(0, NULL, getKey(0), NULL);
+          return m;
+        } else {
+          // just delete
+          release(pos, 1);
+          return NULL;
+        }
+      }
+    }
+
+   void btree_delete(long long key) {
+     page* p = root;
+     page* l = NULL;
+     page* r = NULL;
+     int pos;
+     three_pages* path[height + 1];
+     int path_pos[height + 1];
+     int top = 0;
+     path[top++] = new three_pages(NULL, p, NULL);
+     while (p) {
+       if (p->hdr.flag != LEAF) {
+         page* child = (page*)p->linear_search(key, pos);
+         path_pos[top] = pos;
+         path[top++] = new three_pages(p->getLeftPtr(pos), child,
+                                       p->getRightPtr(pos));
+         p = child;
+       } else {
+         break;
+       }
+     }
+
+     if (p == NULL) {
+       cout << "key not found. exiting..." << endl;
+       exit(1);
+     }
+
+     do {
+       merge_info* m = p->delete_entry(l, key, r);
+       p = NULL;
+       if (m != NULL) {
+         p = path[--top]->p;
+         l = path[top]->l;
+         r = path[top]->r;
+         pos = path_pos[top];
+         if (top == 0) {
+         } else {
+           p = path[top - 1]->p;
+           l = path[top - 1]->l;
+           r = path[top - 1]->r;
+         }
+         delete m;
+       }
+     } while (p != NULL);
+
+
 
 
     void btree_delete (const int64_t &key, const int &flush) {
