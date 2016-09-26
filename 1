@@ -1,0 +1,284 @@
+wbtree_slot_bitmap.cpp: In member function ‘int page::copyBulk(page*, page*, char*, int64_t, char*, int64_t)’:
+wbtree_slot_bitmap.cpp:373:40: error: ‘class page’ has no member named ‘leftmost_ptr’
+         if (!hdr.leftmost_ptr && left->leftmost_ptr) {
+                                        ^
+wbtree_slot_bitmap.cpp: In member function ‘int page::copyBulk(page*, page*, char*, int64_t, char*, int64_t)’:
+wbtree_slot_bitmap.cpp:373:40: error: ‘class page’ has no member named ‘leftmost_ptr’
+         if (!hdr.leftmost_ptr && left->leftmost_ptr) {
+                                        ^
+wbtree_slot_bitmap.cpp:398:20: error: ‘class page’ has no member named ‘leftmost_ptr’
+         if (right->leftmost_ptr) {
+                    ^
+wbtree_slot_bitmap.cpp:398:20: error: ‘class page’ has no member named ‘leftmost_ptr’
+         if (right->leftmost_ptr) {
+                    ^
+wbtree_slot_bitmap.cpp: In member function ‘void page::storeBulk(page*, const int&, const int&, page*)’:
+wbtree_slot_bitmap.cpp:441:55: error: no matching function for call to ‘page::store(NULL, int64_t&, page*&, int)’
+           store(NULL, tmpKey, src->hdr.leftmost_ptr, 0);
+                                                       ^
+wbtree_slot_bitmap.cpp:441:55: note: candidates are:
+wbtree_slot_bitmap.cpp: In member function ‘void page::storeBulk(page*, const int&, const int&, page*)’:
+wbtree_slot_bitmap.cpp:441:55: error: no matching function for call to ‘page::store(NULL, int64_t&, page*&, int)’
+           store(NULL, tmpKey, src->hdr.leftmost_ptr, 0);
+                                                       ^
+wbtree_slot_bitmap.cpp:441:55: note: candidates are:
+wbtree_slot_bitmap.cpp:585:17: note: split_info* page::store(int64_t, char*, int)
+     split_info* store(int64_t key, char* ptr, int flush )
+                 ^
+wbtree_slot_bitmap.cpp:585:17: note: split_info* page::store(int64_t, char*, int)
+     split_info* store(int64_t key, char* ptr, int flush )
+                 ^
+wbtree_slot_bitmap.cpp:585:17: note:   candidate expects 3 arguments, 4 provided
+wbtree_slot_bitmap.cpp:585:17: note:   candidate expects 3 arguments, 4 provided
+wbtree_slot_bitmap.cpp:590:17: note: split_info* page::store(entry*, int)
+     split_info* store(entry *target_entry, int flush) {
+                 ^
+wbtree_slot_bitmap.cpp:590:17: note: split_info* page::store(entry*, int)
+     split_info* store(entry *target_entry, int flush) {
+                 ^
+wbtree_slot_bitmap.cpp:590:17: note:   candidate expects 2 arguments, 4 provided
+wbtree_slot_bitmap.cpp:590:17: note:   candidate expects 2 arguments, 4 provided
+wbtree_slot_bitmap.cpp:594:17: note: split_info* page::store(char*, int64_t, char*, int)
+     split_info* store(char* left, int64_t key, char* right, int flush )
+                 ^
+wbtree_slot_bitmap.cpp:594:17: note: split_info* page::store(char*, int64_t, char*, int)
+     split_info* store(char* left, int64_t key, char* right, int flush )
+                 ^
+wbtree_slot_bitmap.cpp:594:17: note:   no known conversion for argument 3 from ‘page*’ to ‘char*’
+wbtree_slot_bitmap.cpp:594:17: note:   no known conversion for argument 3 from ‘page*’ to ‘char*’
+wbtree_slot_bitmap.cpp: In member function ‘char* page::getPtr(int)’:
+wbtree_slot_bitmap.cpp:514:22: error: cannot convert ‘page*’ to ‘char*’ in return
+           return hdr.leftmost_ptr;
+                      ^
+wbtree_slot_bitmap.cpp: In member function ‘char* page::getPtr(int)’:
+wbtree_slot_bitmap.cpp:514:22: error: cannot convert ‘page*’ to ‘char*’ in return
+           return hdr.leftmost_ptr;
+                      ^
+wbtree_slot_bitmap.cpp: In member function ‘void page::replace(char*, int64_t, char*, int)’:
+wbtree_slot_bitmap.cpp:766:14: error: ‘leftChild’ declared as reference but not initialized
+       char* &leftChild;
+              ^
+wbtree_slot_bitmap.cpp: In member function ‘void page::replace(char*, int64_t, char*, int)’:
+wbtree_slot_bitmap.cpp:766:14: error: ‘leftChild’ declared as reference but not initialized
+       char* &leftChild;
+              ^
+wbtree_slot_bitmap.cpp:767:14: error: ‘rightChild’ declared as reference but not initialized
+       char* &rightChild;
+              ^
+wbtree_slot_bitmap.cpp:767:14: error: ‘rightChild’ declared as reference but not initialized
+       char* &rightChild;
+              ^
+wbtree_slot_bitmap.cpp:770:19: error: cannot convert ‘page*’ to ‘char*’ in assignment
+         leftChild = hdr.leftmost_ptr;
+                   ^
+wbtree_slot_bitmap.cpp:770:19: error: cannot convert ‘page*’ to ‘char*’ in assignment
+         leftChild = hdr.leftmost_ptr;
+                   ^
+wbtree_slot_bitmap.cpp:774:19: error: cannot convert ‘page*’ to ‘char*’ in assignment
+         leftChild = hdr.leftmost_ptr;
+                   ^
+wbtree_slot_bitmap.cpp:774:19: error: cannot convert ‘page*’ to ‘char*’ in assignment
+         leftChild = hdr.leftmost_ptr;
+                   ^
+wbtree_slot_bitmap.cpp: At global scope:
+wbtree_slot_bitmap.cpp:1863:1: error: expected ‘}’ at end of input
+ }
+ ^
+wbtree_slot_bitmap.cpp: At global scope:
+wbtree_slot_bitmap.cpp:1863:1: error: expected ‘}’ at end of input
+ }
+ ^
+wbtree_slot_bitmap.cpp: In member function ‘merge_info* btree::merge(page*, page*, char*, int64_t, char*, int64_t)’:
+wbtree_slot_bitmap.cpp:1219:28: error: ‘hdr’ was not declared in this scope
+       page* tmp = new page(hdr.flag);
+                            ^
+wbtree_slot_bitmap.cpp: In member function ‘merge_info* btree::merge(page*, page*, char*, int64_t, char*, int64_t)’:
+wbtree_slot_bitmap.cpp:1219:28: error: ‘hdr’ was not declared in this scope
+       page* tmp = new page(hdr.flag);
+                            ^
+wbtree_slot_bitmap.cpp: In member function ‘merge_info* btree::delete_entry(page*, int64_t, page*)’:
+wbtree_slot_bitmap.cpp:1229:33: error: ‘linear_search’ was not declared in this scope
+       if (linear_search(key, pos)) {
+                                 ^
+wbtree_slot_bitmap.cpp: In member function ‘merge_info* btree::delete_entry(page*, int64_t, page*)’:
+wbtree_slot_bitmap.cpp:1229:33: error: ‘linear_search’ was not declared in this scope
+       if (linear_search(key, pos)) {
+                                 ^
+wbtree_slot_bitmap.cpp:1230:43: error: no matching function for call to ‘btree::delete_entry(page*&, int64_t&, page*&, int&)’
+         return delete_entry(l, key, r, pos);
+                                           ^
+wbtree_slot_bitmap.cpp:1230:43: error: no matching function for call to ‘btree::delete_entry(page*&, int64_t&, page*&, int&)’
+         return delete_entry(l, key, r, pos);
+                                           ^
+wbtree_slot_bitmap.cpp:1230:43: note: candidates are:
+wbtree_slot_bitmap.cpp:1230:43: note: candidates are:
+wbtree_slot_bitmap.cpp:1227:24: note: merge_info* btree::delete_entry(page*, int64_t, page*)
+     inline merge_info* delete_entry(page* l, int64_t key, page* r) {
+                        ^
+wbtree_slot_bitmap.cpp:1227:24: note: merge_info* btree::delete_entry(page*, int64_t, page*)
+     inline merge_info* delete_entry(page* l, int64_t key, page* r) {
+                        ^
+wbtree_slot_bitmap.cpp:1227:24: note:   candidate expects 3 arguments, 4 provided
+wbtree_slot_bitmap.cpp:1227:24: note:   candidate expects 3 arguments, 4 provided
+wbtree_slot_bitmap.cpp:1236:17: note: merge_info* btree::delete_entry(page*, int64_t, page*, char*, char*, int64_t, int64_t, int)
+     merge_info* delete_entry(page* l, int64_t key, page* r,
+                 ^
+wbtree_slot_bitmap.cpp:1236:17: note: merge_info* btree::delete_entry(page*, int64_t, page*, char*, char*, int64_t, int64_t, int)
+     merge_info* delete_entry(page* l, int64_t key, page* r,
+                 ^
+wbtree_slot_bitmap.cpp:1236:17: note:   candidate expects 8 arguments, 4 provided
+wbtree_slot_bitmap.cpp:1236:17: note:   candidate expects 8 arguments, 4 provided
+wbtree_slot_bitmap.cpp: In member function ‘merge_info* btree::delete_entry(page*, int64_t, page*, char*, char*, int64_t, int64_t, int)’:
+wbtree_slot_bitmap.cpp:1239:26: error: ‘is_sufficient’ was not declared in this scope
+       if (!is_sufficient()) {
+                          ^
+wbtree_slot_bitmap.cpp: In member function ‘merge_info* btree::delete_entry(page*, int64_t, page*, char*, char*, int64_t, int64_t, int)’:
+wbtree_slot_bitmap.cpp:1239:26: error: ‘is_sufficient’ was not declared in this scope
+       if (!is_sufficient()) {
+                          ^
+wbtree_slot_bitmap.cpp:1240:37: error: ‘hdr’ was not declared in this scope
+         if ((l && !l->is_sufficient(hdr.cnt)) &&
+                                     ^
+wbtree_slot_bitmap.cpp:1240:37: error: ‘hdr’ was not declared in this scope
+         if ((l && !l->is_sufficient(hdr.cnt)) &&
+                                     ^
+wbtree_slot_bitmap.cpp:1246:73: error: no matching function for call to ‘btree::merge(page*&, btree*, char*&, int64_t&, char*&, int64_t&)’
+               return merge(l, this, leftPtr, key, rightPtr, leftSplitKey);
+                                                                         ^
+wbtree_slot_bitmap.cpp:1246:73: error: no matching function for call to ‘btree::merge(page*&, btree*, char*&, int64_t&, char*&, int64_t&)’
+               return merge(l, this, leftPtr, key, rightPtr, leftSplitKey);
+                                                                         ^
+wbtree_slot_bitmap.cpp:1246:73: note: candidate is:
+wbtree_slot_bitmap.cpp:1246:73: note: candidate is:
+wbtree_slot_bitmap.cpp:1217:17: note: merge_info* btree::merge(page*, page*, char*, int64_t, char*, int64_t)
+     merge_info* merge(page* left, page* right,
+                 ^
+wbtree_slot_bitmap.cpp:1217:17: note: merge_info* btree::merge(page*, page*, char*, int64_t, char*, int64_t)
+     merge_info* merge(page* left, page* right,
+                 ^
+wbtree_slot_bitmap.cpp:1217:17: note:   no known conversion for argument 2 from ‘btree*’ to ‘page*’
+wbtree_slot_bitmap.cpp:1217:17: note:   no known conversion for argument 2 from ‘btree*’ to ‘page*’
+wbtree_slot_bitmap.cpp:1248:74: error: no matching function for call to ‘btree::merge(btree*, page*&, char*&, int64_t&, char*&, int64_t&)’
+               return merge(this, r, leftPtr, key, rightPtr, rightSplitKey);
+                                                                          ^
+wbtree_slot_bitmap.cpp:1248:74: error: no matching function for call to ‘btree::merge(btree*, page*&, char*&, int64_t&, char*&, int64_t&)’
+               return merge(this, r, leftPtr, key, rightPtr, rightSplitKey);
+                                                                          ^
+wbtree_slot_bitmap.cpp:1248:74: note: candidate is:
+wbtree_slot_bitmap.cpp:1248:74: note: candidate is:
+wbtree_slot_bitmap.cpp:1217:17: note: merge_info* btree::merge(page*, page*, char*, int64_t, char*, int64_t)
+     merge_info* merge(page* left, page* right,
+                 ^
+wbtree_slot_bitmap.cpp:1217:17: note: merge_info* btree::merge(page*, page*, char*, int64_t, char*, int64_t)
+     merge_info* merge(page* left, page* right,
+                 ^
+wbtree_slot_bitmap.cpp:1217:17: note:   no known conversion for argument 1 from ‘btree*’ to ‘page*’
+wbtree_slot_bitmap.cpp:1217:17: note:   no known conversion for argument 1 from ‘btree*’ to ‘page*’
+wbtree_slot_bitmap.cpp:1252:73: error: no matching function for call to ‘btree::merge(page*&, btree*, char*&, int64_t&, char*&, int64_t&)’
+               return merge(l, this, leftPtr, key, rightPtr, leftSplitKey);
+                                                                         ^
+wbtree_slot_bitmap.cpp:1252:73: error: no matching function for call to ‘btree::merge(page*&, btree*, char*&, int64_t&, char*&, int64_t&)’
+               return merge(l, this, leftPtr, key, rightPtr, leftSplitKey);
+                                                                         ^
+wbtree_slot_bitmap.cpp:1252:73: note: candidate is:
+wbtree_slot_bitmap.cpp:1252:73: note: candidate is:
+wbtree_slot_bitmap.cpp:1217:17: note: merge_info* btree::merge(page*, page*, char*, int64_t, char*, int64_t)
+     merge_info* merge(page* left, page* right,
+                 ^
+wbtree_slot_bitmap.cpp:1217:17: note: merge_info* btree::merge(page*, page*, char*, int64_t, char*, int64_t)
+     merge_info* merge(page* left, page* right,
+                 ^
+wbtree_slot_bitmap.cpp:1217:17: note:   no known conversion for argument 2 from ‘btree*’ to ‘page*’
+wbtree_slot_bitmap.cpp:1217:17: note:   no known conversion for argument 2 from ‘btree*’ to ‘page*’
+wbtree_slot_bitmap.cpp:1254:74: error: no matching function for call to ‘btree::merge(btree*, page*&, char*&, int64_t&, char*&, int64_t&)’
+               return merge(this, r, leftPtr, key, rightPtr, rightSplitKey);
+                                                                          ^
+wbtree_slot_bitmap.cpp:1254:74: error: no matching function for call to ‘btree::merge(btree*, page*&, char*&, int64_t&, char*&, int64_t&)’
+               return merge(this, r, leftPtr, key, rightPtr, rightSplitKey);
+                                                                          ^
+wbtree_slot_bitmap.cpp:1254:74: note: candidate is:
+wbtree_slot_bitmap.cpp:1254:74: note: candidate is:
+wbtree_slot_bitmap.cpp:1217:17: note: merge_info* btree::merge(page*, page*, char*, int64_t, char*, int64_t)
+     merge_info* merge(page* left, page* right,
+                 ^
+wbtree_slot_bitmap.cpp:1217:17: note: merge_info* btree::merge(page*, page*, char*, int64_t, char*, int64_t)
+     merge_info* merge(page* left, page* right,
+                 ^
+wbtree_slot_bitmap.cpp:1217:17: note:   no known conversion for argument 1 from ‘btree*’ to ‘page*’
+wbtree_slot_bitmap.cpp:1217:17: note:   no known conversion for argument 1 from ‘btree*’ to ‘page*’
+wbtree_slot_bitmap.cpp:1262:13: error: ‘hdr’ was not declared in this scope
+         if (hdr.flag == LEAF && pos == 0) {
+             ^
+wbtree_slot_bitmap.cpp:1262:13: error: ‘hdr’ was not declared in this scope
+         if (hdr.flag == LEAF && pos == 0) {
+             ^
+wbtree_slot_bitmap.cpp:1264:25: error: ‘release’ was not declared in this scope
+           release(pos, 1);
+                         ^
+wbtree_slot_bitmap.cpp:1264:25: error: ‘release’ was not declared in this scope
+           release(pos, 1);
+                         ^
+wbtree_slot_bitmap.cpp:1270:25: error: ‘release’ was not declared in this scope
+           release(pos, 1);
+                         ^
+wbtree_slot_bitmap.cpp:1270:25: error: ‘release’ was not declared in this scope
+           release(pos, 1);
+                         ^
+wbtree_slot_bitmap.cpp: In member function ‘void btree::btree_delete(long long int)’:
+wbtree_slot_bitmap.cpp:1303:27: error: ‘class page’ has no member named ‘delete_entry’
+        merge_info* m = p->delete_entry(l, key, r);
+                           ^
+wbtree_slot_bitmap.cpp: In member function ‘void btree::btree_delete(long long int)’:
+wbtree_slot_bitmap.cpp:1303:27: error: ‘class page’ has no member named ‘delete_entry’
+        merge_info* m = p->delete_entry(l, key, r);
+                           ^
+wbtree_slot_bitmap.cpp:1323:62: error: a function-definition is not allowed here before ‘{’ token
+     void btree_delete (const int64_t &key, const int &flush) {
+                                                              ^
+wbtree_slot_bitmap.cpp:1323:62: error: a function-definition is not allowed here before ‘{’ token
+     void btree_delete (const int64_t &key, const int &flush) {
+                                                              ^
+wbtree_slot_bitmap.cpp:1746:1: error: expected ‘}’ at end of input
+ };
+ ^
+wbtree_slot_bitmap.cpp:1746:1: error: expected ‘}’ at end of input
+ };
+ ^
+In file included from /usr/include/c++/4.9/cassert:43:0,
+                 from wbtree_slot_bitmap.cpp:12:
+wbtree_slot_bitmap.cpp: In member function ‘int btree::main(int, char**)’:
+wbtree_slot_bitmap.cpp:1818:13: error: ‘class btree’ has no member named ‘btree_ck’
+   assert(bt.btree_ck());
+             ^
+In file included from /usr/include/c++/4.9/cassert:43:0,
+                 from wbtree_slot_bitmap.cpp:12:
+wbtree_slot_bitmap.cpp: In member function ‘int btree::main(int, char**)’:
+wbtree_slot_bitmap.cpp:1818:13: error: ‘class btree’ has no member named ‘btree_ck’
+   assert(bt.btree_ck());
+             ^
+wbtree_slot_bitmap.cpp:1853:31: error: no matching function for call to ‘btree::btree_delete(long int&, int)’
+     bt.btree_delete(keys[i], 1);
+                               ^
+wbtree_slot_bitmap.cpp:1853:31: note: candidate is:
+wbtree_slot_bitmap.cpp:1276:9: note: void btree::btree_delete(long long int)
+    void btree_delete(long long key) {
+         ^
+wbtree_slot_bitmap.cpp:1853:31: error: no matching function for call to ‘btree::btree_delete(long int&, int)’
+     bt.btree_delete(keys[i], 1);
+                               ^
+wbtree_slot_bitmap.cpp:1853:31: note: candidate is:
+wbtree_slot_bitmap.cpp:1276:9: note: void btree::btree_delete(long long int)
+    void btree_delete(long long key) {
+         ^
+wbtree_slot_bitmap.cpp:1276:9: note:   candidate expects 1 argument, 2 provided
+wbtree_slot_bitmap.cpp:1276:9: note:   candidate expects 1 argument, 2 provided
+wbtree_slot_bitmap.cpp: At global scope:
+wbtree_slot_bitmap.cpp:1863:1: error: expected unqualified-id at end of input
+ }
+ ^
+wbtree_slot_bitmap.cpp: At global scope:
+wbtree_slot_bitmap.cpp:1863:1: error: expected unqualified-id at end of input
+ }
+ ^
+make: *** [bitmap] Error 1
+make: *** [bitmap] Error 1
